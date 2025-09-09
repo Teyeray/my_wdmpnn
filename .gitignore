@@ -7,7 +7,7 @@ kaggle/working/qm9/*
 .DS_Store
 # C extensions
 *.so
-
+test.ipynb
 # Distribution / packaging
 .Python
 build/
