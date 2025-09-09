@@ -1,3 +1,4 @@
+import math
 import torch
 import os, re
 import numpy as np
@@ -323,51 +324,217 @@ def periodic_distance_to_C(z: int) -> Tuple[float, float]:
     norm = raw / max_dist if max_dist > 0 else 0.0
     return float(raw), float(norm)
 
+# 你的数据频率
+element_freq = {'*': 18588, 'C': 251669, 'N': 16027, 'O': 33799, 'F': 6666, 
+               'S': 2059, 'Cl': 564, 'Si': 631, 'Na': 7, 'H': 112, 'P': 323, 
+               'Br': 255, 'Ge': 5, 'Se': 7, 'Sn': 7, 'I': 13, 'Cd': 1, 'B': 2, 
+               'Te': 1, 'Ca': 1}
+
+def freq_normalized_atomic_num(atom):
+    """
+    基于元素频率归一化原子序数
+    输入: rdkit Atom 对象
+    输出: 归一化后的值 (float)，频率越低权重越高
+    """
+    # 直接获取元素符号
+    element_symbol = atom.GetSymbol()
+    atomic_num = atom.GetAtomicNum()
+    
+    # 获取频率，如果不在字典中，频率为1（最稀有）
+    freq = element_freq.get(element_symbol, 1)
+    
+    # 基础归一化：原子序数缩放到[0,1]
+    base_norm = (atomic_num - 1) / (53 - 1)  # 基于I=53
+    
+    # 频率权重：频率越低，权重越高
+    weight = 1 / np.log(freq + 1)
+    print(f"Element: {element_symbol}, base_norm:{base_norm}, weighted_norm:{base_norm*weight}")
+    return base_norm * weight
+
 #Generate data for WdMPNN model training
 def make_node_features(atom) -> List[float]:
+    """
+    从 rdkit Atom 生成数值特征向量，确保所有输出为 float 且 hybridization 做 one-hot。
+    输出顺序：
+      [mass, atom_map_num, is_aromatic, formal_charge, atomic_num, chiral_tag,
+       hyb_0, ..., hyb_8, degree, total_h, is_in_ring, distance_norm]
+    """
     try:
-        mass = float(atom.GetMass())
-        atom_map_num = float(atom.GetAtomMapNum())
-        is_aromatic = float(int(atom.GetIsAromatic()))
-        formal_charge = float(atom.GetFormalCharge())
-        atomic_num = float(atom.GetAtomicNum())
-        chiral_tag = float(int(atom.GetChiralTag()))
-        # RDKit HybridizationType 可以直接 int()，作为可重复编码
+        # 为每个特征计算添加独立的异常处理
         try:
-            hybridization = float(int(atom.GetHybridization()))
+            mass = float(atom.GetMass())
         except Exception:
-            hybridization = 0.0
-        degree = float(atom.GetDegree())
-        total_h = float(atom.GetTotalNumHs())
-        is_in_ring = float(int(atom.IsInRing()))
-        mass = float(atom.GetMass())
-        # Gasteiger 电荷（如果之前计算过）
+            mass = "wrongmass"
+        
+        is_aromatic = 1.0 if bool(atom.GetIsAromatic()) else 0.0
+        
         try:
-            gcharge = float(atom.GetProp("_GasteigerCharge"))
+            formal_charge = float(atom.GetFormalCharge())
         except Exception:
-            gcharge = 0.0
-        if atomic_num:
-            _, distance_norm = periodic_distance_to_C(atomic_num)
-        else:
-            distance_norm = 0.0
-        return [
+            formal_charge = "wrongformal_charge"
+        
+        try:
+            atomic_num_int = int(atom.GetAtomicNum())
+            atomic_num = float(atomic_num_int)
+        except Exception:
+            atomic_num_int = "wrongatomic_num"
+            atomic_num = "wrongatomic_num"
+        
+        try:
+            chiral_tag = float(int(atom.GetChiralTag()))
+        except Exception:
+            chiral_tag = "wrongchiral_tag"
+
+        # Hybridization one-hot over a fixed ordered list
+        try:
+            hyb = atom.GetHybridization()
+        except Exception:
+            hyb = None
+        hyb_types = [
+            Chem.rdchem.HybridizationType.UNSPECIFIED,
+            Chem.rdchem.HybridizationType.OTHER,
+            Chem.rdchem.HybridizationType.S,
+            Chem.rdchem.HybridizationType.SP,
+            Chem.rdchem.HybridizationType.SP2,
+            Chem.rdchem.HybridizationType.SP2D,
+            Chem.rdchem.HybridizationType.SP3,
+            Chem.rdchem.HybridizationType.SP3D,
+            Chem.rdchem.HybridizationType.SP3D2,
+        ]
+        
+        # 为 hybridization one-hot 也添加异常处理
+        try:
+            hybridization_oh = [1.0 if hyb == t else 0.0 for t in hyb_types]
+        except Exception:
+            hybridization_oh = ["wronghybridization"] * len(hyb_types)
+
+        try:
+            degree = float(atom.GetDegree())
+        except Exception:
+            degree = "wrongdegree"
+        
+        try:
+            total_h = float(atom.GetTotalNumHs())
+        except Exception:
+            total_h = "wrongtotal_h"
+        
+        is_in_ring = 1.0 if atom.IsInRing() else 0.0
+
+        # Use integer atomic number for periodic_distance_to_C
+        try:
+            if atomic_num_int > 0 and not isinstance(atomic_num_int, str):
+                _, distance_norm = periodic_distance_to_C(atomic_num_int)
+                distance_norm = float(distance_norm)
+            else:
+                distance_norm = 0.0
+        except Exception:
+            distance_norm = "wrongdistance_norm"
+
+        try:
+            # 直接传入atom对象进行归一化
+            atomic_num_norm = freq_normalized_atomic_num(atom)
+        except Exception:
+            atomic_num_norm = "wrongatomic_num_norm"
+
+        feats: List[float] = [
             mass,
-            atom_map_num,
             is_aromatic,
             formal_charge,
             atomic_num,
             chiral_tag,
-            hybridization,
+        ]
+        feats += hybridization_oh
+        feats += [
             degree,
             total_h,
             is_in_ring,
-            mass,
-            gcharge,
             distance_norm,
+            atomic_num_norm,
         ]
+        
+        # 检查是否有错误特征，如果有则抛出详细异常
+        error_features = []
+        for i, feat in enumerate(feats):
+            if isinstance(feat, str) and feat.startswith('wrong'):
+                error_features.append((i, feat))
+        
+        if error_features:
+            error_msg = f"Features with errors: {error_features}"
+            raise ValueError(error_msg)
+        
+        # 确保所有条目都是浮点数
+        feats = [float(x) for x in feats]
+        return feats
+        
     except Exception as e:
-        # 保证函数不会返回非数值，调用者可捕获异常
         raise RuntimeError(f"make_node_features failed: {e}")
+
+def make_edge_features(bond) -> List[float]:
+    """
+    从 rdkit Bond 构造数值特征向量（返回 List[float]）。
+    包含（顺序）:
+      - bond_type_as_double (float)
+      - is_aromatic (0/1)
+      - is_conjugated (0/1)
+      - is_in_ring (0/1)
+      - stereo (int -> float)
+      - valence_contrib (float, 若不可用则 0.0)
+      - begin_atomic_num (int -> float)
+      - end_atomic_num (int -> float)
+      - bond_idx (int -> float)
+    函数尽量容错，遇到异常时使用默认值。
+    """
+    try:
+        bt = float(bond.GetBondTypeAsDouble())
+    except Exception:
+        bt = 'wrong' + "bond_type_as_double"
+
+    try:
+        is_aromatic = float(int(bond.GetIsAromatic()))
+        if is_aromatic:
+            is_aromatic = 1.0
+        else:
+            is_aromatic = 0.0
+    except Exception:
+        is_aromatic = 'wrong' + "is_aromatic"
+
+    try:
+        is_conjugated = float(int(bond.GetIsConjugated()))
+    except Exception:
+        is_conjugated = 'wrong' + "is_conjugated"
+
+    try:
+        is_in_ring = float(int(bond.IsInRing()))
+    except Exception:
+        is_in_ring = 'wrong' + "is_in_ring"
+
+    try:
+        ba = bond.GetBeginAtom()
+        ea = bond.GetEndAtom()
+        begin_z = float(ba.GetAtomicNum()) if ba is not None else 0.0
+        end_z = float(ea.GetAtomicNum()) if ea is not None else 0.0
+    except Exception:
+        begin_z = 'wrong' + "begin_z"
+        end_z = 'wrong' + "end_z"
+
+    try:
+        bond_idx = float(bond.GetIdx())
+    except Exception:
+        bond_idx = 'wrong' + "bond_idx"
+    try:
+        bond_stereo = float(bond.GetStereo())
+    except Exception:
+        bond_stereo = 'wrong' + "bond_stereo"
+    return [
+        bt,
+        is_aromatic,
+        is_conjugated,
+        is_in_ring,
+        begin_z,
+        end_z,
+        bond_idx,
+        bond_stereo,
+    ]
 
 if __name__ == "__main__":
     train, test, sub = get_train_test()
