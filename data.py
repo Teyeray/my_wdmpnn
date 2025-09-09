@@ -1,13 +1,15 @@
+import torch
 import os, re
 import numpy as np
 import pandas as pd
 from rdkit import Chem
-from typing import Union
+from torch import Tensor
 from pathlib import Path
-
+from collections import Counter
+from rdkit.Chem import rdPartialCharges
+from typing import List, Tuple, Optional, Dict, Union, Iterable
 
 #Preliminary processing of the raw data
-
 def get_data_paths(print_paths: bool = False) -> dict:
     BASE_PATH = Path("kaggle/input/neurips-open-polymer-prediction-2025")
     EXTRA_BASE = Path("kaggle/input/smiles-extra-data")
@@ -194,8 +196,178 @@ def replace_all_R_with_C(smi: str) -> str:
     s = re.sub(r'R', 'C', s)
     return s
 
-#Generate data for WdMPNN model training
+def count_smiles_symbols(smiles_iter: Iterable[str]) -> Dict[str, int]:
+    """
+    Count atom element symbols appearing in an iterable of SMILES.
+    - smiles_iter: iterable of SMILES strings (can be a pandas Series)
+    - returns: dict symbol -> count
+    Invalid SMILES are skipped.
+    """
+    cnt = Counter()
+    for smi in smiles_iter:
+        if smi is None:
+            continue
+        try:
+            smi = str(smi)
+        except Exception:
+            continue
+        if smi == "" or smi.lower() == "nan":
+            continue
+        mol = Chem.MolFromSmiles(smi)
+        if mol is None:
+            continue
+        for a in mol.GetAtoms():
+            try:
+                sym = a.GetSymbol()
+            except Exception:
+                continue
+            cnt[sym] += 1
+    return dict(cnt)
 
+def count_symbols_in_df(df: pd.DataFrame, col: str = "SMILES") -> Dict[str, int]:
+    """
+    Convenience wrapper: count symbols in DataFrame column `col`.
+    """
+    if col not in df.columns:
+        raise ValueError(f"Column '{col}' not found in DataFrame.")
+    return count_smiles_symbols(df[col].dropna().astype(str))
+
+def z_to_group_period(z: int) -> Tuple[int, int, bool]:
+    """
+    返回: (period, group, is_fblock)
+    group 为 1..18；f 区元素（Ce-Lu、Th-Lr）返回 is_fblock=True，group=None
+    规则按照 IUPAC 长式周期表直觉定位；La/Ac 置于 group=3。
+    """
+    if z < 1 or z > 118:
+        raise ValueError("Z must be in [1,118]")
+    # period
+    if z <= 2:            period = 1
+    elif z <= 10:         period = 2
+    elif z <= 18:         period = 3
+    elif z <= 36:         period = 4
+    elif z <= 54:         period = 5
+    elif z <= 86:         period = 6
+    else:                 period = 7
+
+    group, is_f = None, False
+    if period == 1:
+        group = 1 if z == 1 else 18
+    elif period == 2:
+        # Li..Ne 的族序列
+        group = [1,2,13,14,15,16,17,18][z - 3]
+    elif period == 3:
+        group = [1,2,13,14,15,16,17,18][z - 11]
+    elif period == 4:
+        group = (z - 19) + 1           # 19..36 -> 1..18
+    elif period == 5:
+        group = (z - 37) + 1
+    elif period == 6:
+        if z == 55: group = 1          # Cs
+        elif z == 56: group = 2        # Ba
+        elif z == 57: group = 3        # La
+        elif 58 <= z <= 71:
+            is_f = True                # Ce..Lu
+        elif 72 <= z <= 80:
+            group = z - 68             # 72..80 -> 4..12
+        elif 81 <= z <= 86:
+            group = z - 68             # 81..86 -> 13..18
+    elif period == 7:
+        if z == 87: group = 1          # Fr
+        elif z == 88: group = 2        # Ra
+        elif z == 89: group = 3        # Ac
+        elif 90 <= z <= 103:
+            is_f = True                # Th..Lr
+        elif 104 <= z <= 112:
+            group = z - 100            # 104..112 -> 4..12
+        elif 113 <= z <= 118:
+            group = z - 100            # 113..118 -> 13..18
+    return period, group, is_f
+
+def z_to_grid_xy(z: int) -> Tuple[float, float]:
+    """
+    网格坐标: x=group, y=period.
+    - 正常块: (x, y) = (group, period)
+    - f 区:   放在“下挂行”，x=3.5..16.5，y=8(镧系)或9(锕系)
+    可按需做归一化：(x-1)/17, (y-1)/6
+    """
+    period, group, is_f = z_to_group_period(z)
+    if not is_f:
+        x = float(group)
+        y = float(period)
+    else:
+        # f-block 连续铺开到 3.5..16.5，保持与长式视觉列对应
+        if 58 <= z <= 71:
+            x = 3.5 + (z - 58)         # Ce..Lu -> 3.5..16.5
+            y = 8.0                    # 镧系“下挂”
+        elif 90 <= z <= 103:
+            x = 3.5 + (z - 90)         # Th..Lr -> 3.5..16.5
+            y = 9.0                    # 锕系“下挂”
+        else:
+            # 理论上不会到这里
+            x, y = 3.5, 8.0
+    return x, y
+
+def periodic_distance_to_C(z: int) -> Tuple[float, float]:
+    """
+    返回 (raw_distance, normalized_distance)：
+      - raw_distance: 在 z_to_grid_xy 网格上的欧氏距离 (x,y) 到 Carbon(Z=6)
+      - normalized_distance: 除以理论最大距离，归一化到 ~[0,1]
+    """
+    cx, cy = z_to_grid_xy(6)
+    x, y = z_to_grid_xy(z)
+    raw = math.hypot(x - cx, y - cy)
+    # 估计最大可能距离（网格 x 最小=1, 最大≈16.5; y 最小=1, 最大≈9）
+    max_x = 16.5
+    max_y = 9.0
+    max_dist = math.hypot(max_x - 1.0, max_y - 1.0)
+    norm = raw / max_dist if max_dist > 0 else 0.0
+    return float(raw), float(norm)
+
+#Generate data for WdMPNN model training
+def make_node_features(atom) -> List[float]:
+    try:
+        mass = float(atom.GetMass())
+        atom_map_num = float(atom.GetAtomMapNum())
+        is_aromatic = float(int(atom.GetIsAromatic()))
+        formal_charge = float(atom.GetFormalCharge())
+        atomic_num = float(atom.GetAtomicNum())
+        chiral_tag = float(int(atom.GetChiralTag()))
+        # RDKit HybridizationType 可以直接 int()，作为可重复编码
+        try:
+            hybridization = float(int(atom.GetHybridization()))
+        except Exception:
+            hybridization = 0.0
+        degree = float(atom.GetDegree())
+        total_h = float(atom.GetTotalNumHs())
+        is_in_ring = float(int(atom.IsInRing()))
+        mass = float(atom.GetMass())
+        # Gasteiger 电荷（如果之前计算过）
+        try:
+            gcharge = float(atom.GetProp("_GasteigerCharge"))
+        except Exception:
+            gcharge = 0.0
+        if atomic_num:
+            _, distance_norm = periodic_distance_to_C(atomic_num)
+        else:
+            distance_norm = 0.0
+        return [
+            mass,
+            atom_map_num,
+            is_aromatic,
+            formal_charge,
+            atomic_num,
+            chiral_tag,
+            hybridization,
+            degree,
+            total_h,
+            is_in_ring,
+            mass,
+            gcharge,
+            distance_norm,
+        ]
+    except Exception as e:
+        # 保证函数不会返回非数值，调用者可捕获异常
+        raise RuntimeError(f"make_node_features failed: {e}")
 
 if __name__ == "__main__":
     train, test, sub = get_train_test()
