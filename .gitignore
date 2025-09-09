@@ -2,7 +2,9 @@
 __pycache__/
 *.py[codz]
 *$py.class
-
+kaggle/input/my-qm9/*
+kaggle/working/qm9/*
+.DS_Store
 # C extensions
 *.so
 
