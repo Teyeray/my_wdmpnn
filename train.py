@@ -172,4 +172,4 @@ def run_training(model, train_loader, val_loader,
             print("Early stopping triggered.")
             break
 
-    return model
+    return model, history
