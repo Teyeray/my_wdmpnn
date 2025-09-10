@@ -116,7 +116,7 @@ def objective(trial):
         tasks,
         df,
         device=device,
-        max_epochs=30,   # 可改大一些
+        max_epochs=30,
         patience=10,
     )
 
@@ -125,12 +125,22 @@ def objective(trial):
     loss_fn = WMAELoss(tasks, n_dict, r_dict)
     val_loss, _ = evaluate(model, val_loader, loss_fn, device, tasks)
 
+    # === 保存权重 ===
+    save_path = f"checkpoints/trial_{trial.number}.pt"
+    torch.save(model.state_dict(), save_path)
+    print(f"[Trial {trial.number}] Saved best model to {save_path} with val_loss={val_loss:.4f}")
+
     return val_loss
 
 
 # -------------------- 主入口 --------------------
 if __name__ == "__main__":
-    study = optuna.create_study(direction="minimize")
+    study = optuna.create_study(
+        study_name="qm9_pretrain_study",
+        storage="sqlite:///optuna_qm9_pretrain.db",
+        load_if_exists=True,
+        direction="minimize",
+        )
     study.optimize(objective, n_trials=50)
 
     print("Best trial:", study.best_trial.params)
