@@ -42,6 +42,6 @@ python -c "import torch; print('CUDA available:', torch.cuda.is_available())"
 
 # 真正运行你的脚本
 
-python polymer_pretrain.py --output "/home/svu/e1350261/kaggle/my_wdmpnn/" \
+python pretrain_polymer.py --output "/home/svu/e1350261/kaggle/my_wdmpnn/" \
 
     2>&1 | tee logs/out_${PBS_JOBID}.log
