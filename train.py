@@ -1,9 +1,9 @@
 import torch
-from torch.optim.lr_scheduler import CosineAnnealingLR
 import numpy as np
-from typing import Dict, List
 import pandas as pd
-
+from tqdm import tqdm
+from typing import Dict, List
+from torch.optim.lr_scheduler import CosineAnnealingLR
 
 # ------------------ wMAE Loss ------------------
 class WMAELoss(torch.nn.Module):
@@ -87,13 +87,14 @@ class EarlyStopping:
 
 
 # ------------------ Train / Eval ------------------
-def train_one_epoch(model, loader, optimizer, loss_fn, device, tasks):
+def train_one_epoch(model, loader, optimizer, loss_fn, device, tasks, epoch=None, max_epochs=None):
     model.train()
     total_loss = 0.0
     per_task_accum = {t: 0.0 for t in tasks}
     n_batches = 0
 
-    for batch in loader:
+    pbar = tqdm(loader, desc=f"Train Epoch {epoch}/{max_epochs}", leave=False)  
+    for batch in pbar:
         batch = batch.to(device)
         optimizer.zero_grad()
         outputs = model(batch)  # dict {task: [B]}
@@ -108,19 +109,23 @@ def train_one_epoch(model, loader, optimizer, loss_fn, device, tasks):
             per_task_accum[t] += per_task[t]
         n_batches += 1
 
+        # 在进度条上显示当前 loss
+        pbar.set_postfix(loss=loss.item())
+
     avg_loss = total_loss / n_batches
     avg_task_loss = {t: per_task_accum[t] / n_batches for t in tasks}
     return avg_loss, avg_task_loss
 
 
 @torch.no_grad()
-def evaluate(model, loader, loss_fn, device, tasks):
+def evaluate(model, loader, loss_fn, device, tasks, epoch=None, max_epochs=None):
     model.eval()
     total_loss = 0.0
     per_task_accum = {t: 0.0 for t in tasks}
     n_batches = 0
 
-    for batch in loader:
+    pbar = tqdm(loader, desc=f"Val   Epoch {epoch}/{max_epochs}", leave=False)
+    for batch in pbar:
         batch = batch.to(device)
         outputs = model(batch)
 
@@ -130,6 +135,8 @@ def evaluate(model, loader, loss_fn, device, tasks):
         for t in per_task:
             per_task_accum[t] += per_task[t]
         n_batches += 1
+
+        pbar.set_postfix(loss=loss.item())
 
     avg_loss = total_loss / n_batches
     avg_task_loss = {t: per_task_accum[t] / n_batches for t in tasks}
@@ -151,8 +158,8 @@ def run_training(model, train_loader, val_loader,
     history = []
     # 3) Loop
     for epoch in range(1, max_epochs + 1):
-        train_loss, train_task_loss = train_one_epoch(model, train_loader, optimizer, loss_fn, device, tasks)
-        val_loss, val_task_loss = evaluate(model, val_loader, loss_fn, device, tasks)
+        train_loss, train_task_loss = train_one_epoch(model, train_loader, optimizer, loss_fn, device, tasks, epoch=epoch, max_epochs=max_epochs)
+        val_loss, val_task_loss = evaluate(model, val_loader, loss_fn, device, tasks, epoch=epoch, max_epochs=max_epochs)
         scheduler.step()
 
         # 打印结果

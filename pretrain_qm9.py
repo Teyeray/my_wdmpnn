@@ -1,14 +1,16 @@
+import os
 import torch
 import optuna
+import datetime
 import pandas as pd
-from torch_geometric.datasets import QM9
+from data import load_qm9
+from model import WDMPNNModel
 from torch_geometric.loader import DataLoader
-from sklearn.model_selection import train_test_split
-
-# ====== 你之前写的工具函数 ======
 from train import run_training, evaluate, compute_task_stats, WMAELoss
-from model import WDMPNNModel 
+
 device = "cuda" if torch.cuda.is_available() else "cpu"
+
+
 # -------------------- 参数搜索空间 --------------------
 def suggest_params(trial):
     return {
@@ -32,9 +34,9 @@ def suggest_params(trial):
 
         # === Head ===
         "mlp_hidden": trial.suggest_categorical("mlp_hidden", [
-            (128, 64),
-            (256, 128),
-            (256, 128, 64),
+            "128-64",
+            "256-128",
+            "256-128-64",
         ]),
         "head_dropout": trial.suggest_float("head_dropout", 0.0, 0.5),
 
@@ -49,102 +51,111 @@ def suggest_params(trial):
     }
 
 
-# -------------------- 数据加载 --------------------
-def load_qm9(batch_size=64, num_workers=0):
-    dataset = QM9(root="kaggle/input/my-qm9/qm9")
-    idx = list(range(len(dataset)))
-    train_idx, val_idx = train_test_split(idx, test_size=0.1, random_state=42)
-
-    train_ds = dataset[train_idx]
-    val_ds = dataset[val_idx]
-
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers)
-    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers)
-    
-    QM9_TASKS = [
-    "mu", "alpha", "homo", "lumo", "gap", "r2", "zpve",
-    "U0", "U", "H", "G", "Cv",
-    "u0_atom", "u_atom", "h_atom", "g_atom",
-    "A", "B", "C",
-    ]
-
-    # 转换成 DataFrame 方便统计 n_dict / r_dict
-    y = dataset._data.y.numpy()
-    df = pd.DataFrame(y, columns=QM9_TASKS)
-
-    return train_loader, val_loader, df, QM9_TASKS, dataset
-
-
 # -------------------- Optuna 目标函数 --------------------
-def objective(trial):
-    params = suggest_params(trial)
+def make_objective(train_loader, val_loader, df, tasks, dataset, max_epochs=30, patience=10):
+    def objective(trial):
+        params = suggest_params(trial)
 
-    # === 数据 ===
-    train_loader, val_loader, df, tasks, dataset = load_qm9(batch_size=params["batch_size"])
-    node_dim = dataset.num_node_features
-    edge_dim = dataset.num_edge_features
+        mlp_hidden = list(map(int, params["mlp_hidden"].split("-")))
+        node_dim = dataset.num_node_features
+        edge_dim = dataset.num_edge_features
 
-    # === 模型 ===
-    model = WDMPNNModel(
-        node_dim=node_dim,
-        edge_dim=edge_dim,
-        hidden_dim=params["hidden_dim"],
-        num_layers=params["num_layers"],
-        tasks=tasks,
-        mlp_hidden=list(params["mlp_hidden"]),
-        use_edge_attn=params["use_edge_attn"],
-        dropout=params["dropout"],
-        act=params["act"],
-        pool=params["pool"],
-        adapter_kind=params["adapter_kind"],
-        adapter_hidden=params["adapter_hidden"],
-        adapter_dropout=params["adapter_dropout"],
-    ).to(device)
 
-    # === Optimizer ===
-    groups = model.param_groups()
-    optimizer = torch.optim.Adam([
-        {"params": groups["encoder"], "lr": params["lr_encoder"], "weight_decay": params["weight_decay"]},
-        {"params": groups["adapter"], "lr": params["lr_adapter"], "weight_decay": params["weight_decay"]},
-        {"params": groups["head"], "lr": params["lr_head"], "weight_decay": params["weight_decay"]},
-    ])
+        train_loader = DataLoader(train_ds, batch_size=params["batch_size"], shuffle=True)
+        val_loader   = DataLoader(val_ds, batch_size=params["batch_size"], shuffle=False)
+        
+        # === 模型 ===
+        model = WDMPNNModel(
+            node_dim=node_dim,
+            edge_dim=edge_dim,
+            hidden_dim=params["hidden_dim"],
+            num_layers=params["num_layers"],
+            tasks=tasks,
+            mlp_hidden=mlp_hidden,
+            use_edge_attn=params["use_edge_attn"],
+            dropout=params["dropout"],
+            act=params["act"],
+            pool=params["pool"],
+            adapter_kind=params["adapter_kind"],
+            adapter_hidden=params["adapter_hidden"],
+            adapter_dropout=params["adapter_dropout"],
+        ).to(device)
 
-    # === 训练 ===
-    model, history = run_training(
-        model,
-        train_loader,
-        val_loader,
-        optimizer,
-        tasks,
-        df,
-        device=device,
-        max_epochs=30,
-        patience=10,
-    )
-    for h in history:
-        print(f"[Trial {trial.number}] Epoch {h['epoch']}: "
-            f"Train={h['train_loss']:.4f}, Val={h['val_loss']:.4f}")
+        # === Optimizer ===
+        groups = model.param_groups()
+        optimizer = torch.optim.Adam([
+            {"params": groups["encoder"], "lr": params["lr_encoder"], "weight_decay": params["weight_decay"]},
+            {"params": groups["adapter"], "lr": params["lr_adapter"], "weight_decay": params["weight_decay"]},
+            {"params": groups["head"], "lr": params["lr_head"], "weight_decay": params["weight_decay"]},
+        ])
 
-    # === 验证集总 loss ===
-    n_dict, r_dict = compute_task_stats(df, tasks)
-    loss_fn = WMAELoss(tasks, n_dict, r_dict)
-    val_loss, _ = evaluate(model, val_loader, loss_fn, device, tasks)
+        # === 训练 ===
+        model, _ = run_training(
+            model,
+            train_loader,
+            val_loader,
+            optimizer,
+            tasks,
+            df,
+            device=device,
+            max_epochs=max_epochs,
+            patience=patience,
+        )
 
-    # === 保存权重 ===
-    save_path = f"checkpoints/trial_{trial.number}.pt"
-    torch.save(model.state_dict(), save_path)
-    print(f"[Trial {trial.number}] Saved best model to {save_path} with val_loss={val_loss:.4f}")
+        # === 验证集总 loss ===
+        n_dict, r_dict = compute_task_stats(df, tasks)
+        loss_fn = WMAELoss(tasks, n_dict, r_dict)
+        val_loss, val_task_loss = evaluate(model, val_loader, loss_fn, device, tasks)
 
-    return val_loss
+        # === 保存权重 ===
+        os.makedirs("checkpoints", exist_ok=True)
+        timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        trial_dir = os.path.join(
+            "checkpoints", f"{trial.study.study_name}_trial{trial.number}_{timestamp}"
+        )
+        os.makedirs(trial_dir, exist_ok=True)
+
+        model.save_encoder(os.path.join(trial_dir, "encoder.pt"))
+        model.save_adapter(os.path.join(trial_dir, "adapter.pt"))
+        model.save_head(os.path.join(trial_dir, "head.pt"))
+        model.save_full(os.path.join(trial_dir, "full.pt"))
+
+        print(f"[Trial {trial.number}] Weights saved in {trial_dir} (val_loss={val_loss:.4f})")
+
+        # === 打印 trial summary ===
+        task_str = " | ".join([f"{t}: {val_task_loss[t]:.4f}" for t in tasks])
+        print(f"[Trial {trial.number}] val_loss={val_loss:.4f} || {task_str}")
+
+        if trial.number > 0:
+            try:
+                best_trial = trial.study.best_trial
+                if best_trial is not None and best_trial.number != trial.number:
+                    print(f"[Best so far] Trial {best_trial.number}: val_loss={best_trial.value:.4f}")
+            except ValueError:
+                pass
+
+        return val_loss
+    return objective
+
+
 # -------------------- 主入口 --------------------
 if __name__ == "__main__":
+    train_ds, val_ds, df, tasks, dataset = load_qm9(batch_size=512, num_workers=4, root="kaggle/input/my-qm9/qm9")
+
     study = optuna.create_study(
         study_name="qm9_pretrain_study",
         storage="sqlite:///optuna_qm9_pretrain.db",
         load_if_exists=True,
         direction="minimize",
-        )
-    study.optimize(objective, n_trials=50)
+    )
+    study.optimize(
+        make_objective(
+            train_ds, val_ds, df, tasks, dataset,
+            max_epochs=2,
+            patience=1
+        ),
+        n_trials=5,
+    )
 
-    print("Best trial:", study.best_trial.params)
+    print("Best trial params:", study.best_trial.params)
     print("Best val_loss:", study.best_trial.value)

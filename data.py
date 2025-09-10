@@ -10,9 +10,35 @@ from pathlib import Path
 from collections import Counter
 from torch.utils.data import Dataset
 from torch_geometric.data import Data
+from torch_geometric.datasets import QM9
+from torch_geometric.loader import DataLoader
+from sklearn.model_selection import train_test_split
 from typing import List, Tuple, Optional, Dict, Union, Iterable
 
 
+def load_qm9(batch_size=64, num_workers=0, root="kaggle/input/my-qm9/qm9"):
+    dataset = QM9(root=root)
+    idx = list(range(len(dataset)))
+    train_idx, val_idx = train_test_split(idx, test_size=0.1, random_state=42)
+
+    train_ds = dataset[train_idx]
+    val_ds = dataset[val_idx]
+
+    #train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers)
+    #val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+
+    QM9_TASKS = [
+        "mu", "alpha", "homo", "lumo", "gap", "r2", "zpve",
+        "U0", "U", "H", "G", "Cv",
+        "u0_atom", "u_atom", "h_atom", "g_atom",
+        "A", "B", "C",
+    ]
+
+    # 转换成 DataFrame 方便统计 n_dict / r_dict
+    y = dataset._data.y.numpy()
+    df = pd.DataFrame(y, columns=QM9_TASKS)
+
+    return train_ds, val_ds, df, QM9_TASKS, dataset
 # Preliminary processing of the raw data
 def get_data_paths(print_paths: bool = False) -> dict:
     BASE_PATH = Path("kaggle/input/neurips-open-polymer-prediction-2025")
@@ -698,6 +724,59 @@ def build_pyg_dataset(
         smiles, targets=targets, cache_path=cache_path, force_rebuild=force_rebuild
     )
 
+def load_polymer(
+    tasks: List[str] = None,
+    batch_size: int = 64,
+    split_ratio: float = 0.9,
+    cache_path: str = "train_polymer.pkl",
+    force_rebuild: bool = False,
+) -> Tuple[DataLoader, DataLoader, pd.DataFrame, List[str]]:
+    """
+    加载并预处理 Polymer 数据，返回 DataLoader。
+
+    Args:
+        tasks (List[str], optional): 要预测的目标属性。
+            默认 ["Tg", "FFV", "Tc", "Density", "Rg"]。
+        batch_size (int, optional): DataLoader 的 batch size，默认 64。
+        split_ratio (float, optional): 训练集划分比例 (0~1)，默认 0.9。
+        cache_path (str, optional): 数据缓存路径，默认 "train_polymer.pkl"。
+        force_rebuild (bool, optional): 是否强制重建缓存，默认 False。
+
+    Returns:
+        train_loader (DataLoader): 训练集 loader
+        val_loader (DataLoader): 验证集 loader
+        train_filtered (pd.DataFrame): 清洗后的 DataFrame
+        tasks (List[str]): 实际使用的任务列表
+    """
+    if tasks is None:
+        tasks = ["Tg", "FFV", "Tc", "Density", "Rg"]
+
+    # === 1) 读取并清洗 DataFrame ===
+    train, _, _ = get_train_test()
+    train = add_extra_data(train)
+    train.rename(columns={"SMILES": "SMILES_raw"}, inplace=True)
+    train["SMILES"] = train["SMILES_raw"].apply(replace_all_R_with_C)
+    train = clean_smiles(train)
+    train_filtered = filter_train_data(train)
+
+    # === 2) 构建 PyG dataset ===
+    ds = build_pyg_dataset(
+        train_filtered["SMILES"],
+        targets=train_filtered[tasks].values,
+        cache_path=cache_path,
+        force_rebuild=force_rebuild,
+    )
+
+    # === 3) 划分 train/val ===
+    train_size = int(split_ratio * len(ds))
+    val_size = len(ds) - train_size
+    train_ds, val_ds = torch.utils.data.random_split(ds, [train_size, val_size])
+
+    # === 4) DataLoader ===
+    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False)
+
+    return train_loader, val_loader, train_filtered, tasks
 
 # 统计
 def attribute_stats_from_smiles(

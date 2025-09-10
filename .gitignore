@@ -7,6 +7,8 @@ kaggle/working/qm9/*
 .DS_Store
 # C extensions
 *.so
+optuna_qm9_pretrain.db
+checkpoints/*
 test.ipynb
 # Distribution / packaging
 .Python
