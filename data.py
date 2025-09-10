@@ -628,20 +628,10 @@ def _mol_to_pyg_data(mol: Chem.Mol, smiles: str, target=None) -> Optional[Data]:
     # --- 支持 multi-target: scalar 或 iterable -> 1D float tensor ---
     if target is not None:
         try:
-            # pandas Series/DataFrame row / numpy array / list / tuple -> flatten to 1D
-            if isinstance(target, (list, tuple, np.ndarray, pd.Series)):
-                arr = np.asarray(target, dtype=float)
-                # 如果是一行 DataFrame（shape (n,) 或 (1,n)），也能处理
-                if arr.ndim > 1:
-                    arr = arr.ravel()
-                data.y = torch.tensor(arr, dtype=torch.float32)
-            else:
-                # scalar -> length-1 tensor
-                val = float(target)
-                data.y = torch.tensor([val], dtype=torch.float32)
+            arr = np.atleast_1d(np.asarray(target, dtype=float))
+            data.y = torch.tensor(arr, dtype=torch.float32).view(1, -1)
         except Exception:
-            # 任何异常都存为 NaN 占位（训练时请处理 NaN）
-            data.y = torch.tensor([float("nan")], dtype=torch.float32)
+            data.y = torch.full((1, 1), float("nan"), dtype=torch.float32)
     return data
 
 
