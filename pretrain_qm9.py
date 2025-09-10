@@ -7,12 +7,8 @@ from sklearn.model_selection import train_test_split
 
 # ====== 你之前写的工具函数 ======
 from train import run_training, evaluate, compute_task_stats, WMAELoss
-from model import WDMPNNModel   # 就是你写的带 adapter 的 model.py
-
-
+from model import WDMPNNModel 
 device = "cuda" if torch.cuda.is_available() else "cpu"
-
-
 # -------------------- 参数搜索空间 --------------------
 def suggest_params(trial):
     return {
@@ -55,7 +51,7 @@ def suggest_params(trial):
 
 # -------------------- 数据加载 --------------------
 def load_qm9(batch_size=64, num_workers=0):
-    dataset = QM9(root="kaggle/working/qm9")
+    dataset = QM9(root="kaggle/input/my-qm9/qm9")
     idx = list(range(len(dataset)))
     train_idx, val_idx = train_test_split(idx, test_size=0.1, random_state=42)
 
@@ -64,13 +60,19 @@ def load_qm9(batch_size=64, num_workers=0):
 
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers)
     val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+    
+    QM9_TASKS = [
+    "mu", "alpha", "homo", "lumo", "gap", "r2", "zpve",
+    "U0", "U", "H", "G", "Cv",
+    "u0_atom", "u_atom", "h_atom", "g_atom",
+    "A", "B", "C",
+    ]
 
     # 转换成 DataFrame 方便统计 n_dict / r_dict
     y = dataset._data.y.numpy()
-    columns = [f"task_{i}" for i in range(y.shape[1])]
-    df = pd.DataFrame(y, columns=columns)
+    df = pd.DataFrame(y, columns=QM9_TASKS)
 
-    return train_loader, val_loader, df, columns, dataset
+    return train_loader, val_loader, df, QM9_TASKS, dataset
 
 
 # -------------------- Optuna 目标函数 --------------------
@@ -108,7 +110,7 @@ def objective(trial):
     ])
 
     # === 训练 ===
-    model = run_training(
+    model, history = run_training(
         model,
         train_loader,
         val_loader,
@@ -119,6 +121,9 @@ def objective(trial):
         max_epochs=30,
         patience=10,
     )
+    for h in history:
+        print(f"[Trial {trial.number}] Epoch {h['epoch']}: "
+            f"Train={h['train_loss']:.4f}, Val={h['val_loss']:.4f}")
 
     # === 验证集总 loss ===
     n_dict, r_dict = compute_task_stats(df, tasks)
@@ -131,8 +136,6 @@ def objective(trial):
     print(f"[Trial {trial.number}] Saved best model to {save_path} with val_loss={val_loss:.4f}")
 
     return val_loss
-
-
 # -------------------- 主入口 --------------------
 if __name__ == "__main__":
     study = optuna.create_study(

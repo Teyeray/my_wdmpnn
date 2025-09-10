@@ -148,6 +148,7 @@ def run_training(model, train_loader, val_loader,
     scheduler = CosineAnnealingLR(optimizer, T_max=max_epochs)
     early_stopper = EarlyStopping(patience=patience)
 
+    history = []
     # 3) Loop
     for epoch in range(1, max_epochs + 1):
         train_loss, train_task_loss = train_one_epoch(model, train_loader, optimizer, loss_fn, device, tasks)
@@ -159,6 +160,13 @@ def run_training(model, train_loader, val_loader,
         print(f"Epoch {epoch:03d}: "
               f"Train={train_loss:.4f}, Val={val_loss:.4f} || {task_str}")
 
+        history.append({
+            "epoch": epoch,
+            "train_loss": train_loss,
+            "val_loss": val_loss,
+            "val_task_loss": val_task_loss,
+        })
+        
         early_stopper.step(val_loss)
         if early_stopper.early_stop:
             print("Early stopping triggered.")
