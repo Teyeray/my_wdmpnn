@@ -367,3 +367,145 @@ class WDMPNNModel(nn.Module):
         missing, unexpected = self.load_state_dict(state, strict=strict)
         if not strict and (missing or unexpected):
             print("[load_full] missing:", missing, "unexpected:", unexpected)
+
+
+
+# ------------------ Traditional ML Model Configurations ------------------
+class MLModelConfig:
+    """Configuration class for traditional ML models"""
+    def __init__(self):
+        # Data processing
+        self.random_state = 42
+        self.n_folds = 5
+        self.use_stratified_cv = True
+        
+        # Feature processing
+        self.use_variance_threshold = True
+        self.variance_threshold = 0.01
+        self.use_correlation_filter = True
+        self.correlation_threshold = 0.95
+        self.use_feature_selection = True
+        self.use_robust_scaler = True
+        
+        # Model parameters by task
+        self.xgb_params = {
+            'Tg': {
+                'n_estimators': 3000, 'max_depth': 5, 'learning_rate': 0.01,
+                'subsample': 0.8, 'colsample_bytree': 1.0, 'reg_lambda': 7.0,
+                'gamma': 0.1, 'objective': 'reg:absoluteerror', 'eval_metric': 'mae',
+                'early_stopping_rounds': 50, 'random_state': 42
+            },
+            'FFV': {
+                'n_estimators': 3000, 'max_depth': 7, 'learning_rate': 0.06,
+                'subsample': 0.6, 'colsample_bytree': 0.8, 'reg_lambda': 2.0,
+                'gamma': 0.0, 'objective': 'reg:absoluteerror', 'eval_metric': 'mae',
+                'early_stopping_rounds': 50, 'random_state': 42
+            },
+            'Tc': {
+                'n_estimators': 3000, 'max_depth': 4, 'learning_rate': 0.01,
+                'subsample': 0.6, 'colsample_bytree': 0.8, 'reg_lambda': 7.0,
+                'gamma': 0.0, 'objective': 'reg:absoluteerror', 'eval_metric': 'mae',
+                'early_stopping_rounds': 50, 'random_state': 42
+            },
+            'Density': {
+                'n_estimators': 3000, 'max_depth': 5, 'learning_rate': 0.06,
+                'subsample': 0.8, 'colsample_bytree': 1.0, 'reg_lambda': 3.0,
+                'gamma': 0.0, 'objective': 'reg:absoluteerror', 'eval_metric': 'mae',
+                'early_stopping_rounds': 50, 'random_state': 42
+            },
+            'Rg': {
+                'n_estimators': 3000, 'max_depth': 4, 'learning_rate': 0.06,
+                'subsample': 0.6, 'colsample_bytree': 1.0, 'reg_lambda': 10.0,
+                'gamma': 0.1, 'objective': 'reg:absoluteerror', 'eval_metric': 'mae',
+                'early_stopping_rounds': 50, 'random_state': 42
+            }
+        }
+        
+        # LightGBM parameters
+        self.lgb_params = {
+            'Tg': {
+                'n_estimators': 3000, 'max_depth': 5, 'learning_rate': 0.01,
+                'subsample': 0.8, 'colsample_bytree': 1.0, 'reg_lambda': 7.0,
+                'objective': 'mae', 'metric': 'mae', 'verbosity': -1,
+                'random_state': 42, 'force_col_wise': True
+            },
+            'FFV': {
+                'n_estimators': 3000, 'max_depth': 7, 'learning_rate': 0.06,
+                'subsample': 0.6, 'colsample_bytree': 0.8, 'reg_lambda': 2.0,
+                'objective': 'mae', 'metric': 'mae', 'verbosity': -1,
+                'random_state': 42, 'force_col_wise': True
+            },
+            'Tc': {
+                'n_estimators': 3000, 'max_depth': 4, 'learning_rate': 0.01,
+                'subsample': 0.6, 'colsample_bytree': 0.8, 'reg_lambda': 7.0,
+                'objective': 'mae', 'metric': 'mae', 'verbosity': -1,
+                'random_state': 42, 'force_col_wise': True
+            },
+            'Density': {
+                'n_estimators': 3000, 'max_depth': 5, 'learning_rate': 0.06,
+                'subsample': 0.8, 'colsample_bytree': 1.0, 'reg_lambda': 3.0,
+                'objective': 'mae', 'metric': 'mae', 'verbosity': -1,
+                'random_state': 42, 'force_col_wise': True
+            },
+            'Rg': {
+                'n_estimators': 3000, 'max_depth': 4, 'learning_rate': 0.06,
+                'subsample': 0.6, 'colsample_bytree': 1.0, 'reg_lambda': 10.0,
+                'objective': 'mae', 'metric': 'mae', 'verbosity': -1,
+                'random_state': 42, 'force_col_wise': True
+            }
+        }
+        
+        # CatBoost parameters
+        self.cat_params = {
+            'Tg': {
+                'iterations': 3000, 'depth': 5, 'learning_rate': 0.01,
+                'l2_leaf_reg': 7.0, 'loss_function': 'MAE',
+                'eval_metric': 'MAE', 'random_seed': 42, 'verbose': False,
+                'early_stopping_rounds': 50
+            },
+            'FFV': {
+                'iterations': 3000, 'depth': 7, 'learning_rate': 0.06,
+                'l2_leaf_reg': 2.0, 'loss_function': 'MAE',
+                'eval_metric': 'MAE', 'random_seed': 42, 'verbose': False,
+                'early_stopping_rounds': 50
+            },
+            'Tc': {
+                'iterations': 3000, 'depth': 4, 'learning_rate': 0.01,
+                'l2_leaf_reg': 7.0, 'loss_function': 'MAE',
+                'eval_metric': 'MAE', 'random_seed': 42, 'verbose': False,
+                'early_stopping_rounds': 50
+            },
+            'Density': {
+                'iterations': 3000, 'depth': 5, 'learning_rate': 0.06,
+                'l2_leaf_reg': 3.0, 'loss_function': 'MAE',
+                'eval_metric': 'MAE', 'random_seed': 42, 'verbose': False,
+                'early_stopping_rounds': 50
+            },
+            'Rg': {
+                'iterations': 3000, 'depth': 4, 'learning_rate': 0.06,
+                'l2_leaf_reg': 10.0, 'loss_function': 'MAE',
+                'eval_metric': 'MAE', 'random_seed': 42, 'verbose': False,
+                'early_stopping_rounds': 50
+            }
+        }
+
+
+def create_ml_model(model_type: str, target: str, config: MLModelConfig):
+    """Create ML model instance based on type and target"""
+    if model_type.lower() == 'xgboost':
+        import xgboost as xgb
+        params = config.xgb_params.get(target, config.xgb_params['Tg'])
+        return xgb.XGBRegressor(**params, n_jobs=-1, verbosity=0)
+    
+    elif model_type.lower() == 'lightgbm':
+        import lightgbm as lgb
+        params = config.lgb_params.get(target, config.lgb_params['Tg'])
+        return lgb.LGBMRegressor(**params, n_jobs=-1)
+    
+    elif model_type.lower() == 'catboost':
+        import catboost as cb
+        params = config.cat_params.get(target, config.cat_params['Tg'])
+        return cb.CatBoostRegressor(**params, thread_count=-1)
+    
+    else:
+        raise ValueError(f"Unknown model type: {model_type}")
