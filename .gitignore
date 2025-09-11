@@ -2,11 +2,14 @@
 __pycache__/
 *.py[codz]
 *$py.class
+dataset/*
+trash/*
 kaggle/input/my-qm9/*
 kaggle/working/qm9/*
 .DS_Store
 # C extensions
 *.so
+test_data.ipynb
 optuna_qm9_pretrain.db
 checkpoints/*
 test.ipynb
@@ -209,3 +212,4 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+test_data.ipynb
