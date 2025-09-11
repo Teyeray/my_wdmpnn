@@ -1,14 +1,15 @@
+import ast
 import math
 import torch
 import pickle
-import os, re
 import numpy as np
+import os, re, json
 import pandas as pd
-from tqdm import tqdm
 from rdkit import Chem
 from torch import Tensor
 from pathlib import Path
 from collections import Counter
+from rich.progress import Progress
 from torch.utils.data import Dataset
 from torch_geometric.data import Data
 from torch_geometric.loader import DataLoader
@@ -18,6 +19,29 @@ from rdkit.Chem import Descriptors, rdMolDescriptors, AllChem
 from rdkit.Chem.rdMolDescriptors import CalcNumRotatableBonds
 from typing import List, Tuple, Optional, Dict, Union, Iterable
 from mordred import Calculator, descriptors as mordred_descriptors
+
+
+def save_columns_to_json(df: pd.DataFrame, name: str):
+    cols = df.columns.tolist()
+    os.makedirs("datasets", exist_ok=True)
+    with open(f"datasets/{name}.json", "w", encoding="utf-8") as f:
+        json.dump(cols, f, ensure_ascii=False, indent=2)
+    print(f"Saved datasets/{name}.json")
+    return cols
+
+
+def load_feature_cache(cache_path):
+    if os.path.exists(cache_path):
+        with open(cache_path, "rb") as f:
+            return pickle.load(f)
+    return {}
+
+
+def save_feature_cache(cache_path, cache_dict):
+    if not os.path.exists(os.path.dirname(cache_path)):
+        os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+    with open(cache_path, "wb") as f:
+        pickle.dump(cache_dict, f)
 
 
 # Preliminary processing of the raw data
@@ -158,6 +182,7 @@ def add_extra_data(train: pd.DataFrame) -> pd.DataFrame:
 
     return train
 
+
 def _compute_all_string_features(smiles: str) -> dict:
     """提取 SMILES 字符串的字符/化学符号/占位符特征（不依赖 RDKit）"""
     if not isinstance(smiles, str):
@@ -165,72 +190,55 @@ def _compute_all_string_features(smiles: str) -> dict:
     feats = {}
 
     # 基础统计
-    feats['smiles_length'] = len(smiles)
-    feats['capital_letters'] = sum(c.isupper() for c in smiles)
-    feats['lowercase_letters'] = sum(c.islower() for c in smiles)
-    feats['digits'] = sum(c.isdigit() for c in smiles)
+    feats["smiles_length"] = len(smiles)
+    feats["capital_letters"] = sum(c.isupper() for c in smiles)
+    feats["lowercase_letters"] = sum(c.islower() for c in smiles)
+    feats["digits"] = sum(c.isdigit() for c in smiles)
 
     # 符号统计
-    feats['parentheses'] = smiles.count('(') + smiles.count(')')
-    feats['brackets'] = smiles.count('[') + smiles.count(']')
-    feats['braces'] = smiles.count('{') + smiles.count('}')
-    feats['equals'] = smiles.count('=')
-    feats['hashes'] = smiles.count('#')
-    feats['colons'] = smiles.count(':')
-    feats['ats'] = smiles.count('@')
-    feats['slashes'] = smiles.count('/') + smiles.count('\\')
-    feats['plus_minus'] = smiles.count('+') + smiles.count('-')
+    feats["parentheses"] = smiles.count("(") + smiles.count(")")
+    feats["brackets"] = smiles.count("[") + smiles.count("]")
+    feats["braces"] = smiles.count("{") + smiles.count("}")
+    feats["equals"] = smiles.count("=")
+    feats["hashes"] = smiles.count("#")
+    feats["colons"] = smiles.count(":")
+    feats["ats"] = smiles.count("@")
+    feats["slashes"] = smiles.count("/") + smiles.count("\\")
+    feats["plus_minus"] = smiles.count("+") + smiles.count("-")
 
     # 元素计数
-    feats['C_count'] = smiles.count('C') + smiles.count('c')
-    feats['O_count'] = smiles.count('O') + smiles.count('o')
-    feats['N_count'] = smiles.count('N') + smiles.count('n')
-    feats['S_count'] = smiles.count('S') + smiles.count('s')
-    feats['P_count'] = smiles.count('P') + smiles.count('p')
-    feats['F_count'] = smiles.count('F') + smiles.count('f')
-    feats['Cl_count'] = smiles.count('Cl') + smiles.count('cl')
-    feats['Br_count'] = smiles.count('Br') + smiles.count('br')
-    feats['I_count'] = smiles.count('I') + smiles.count('i')
+    feats["C_count"] = smiles.count("C") + smiles.count("c")
+    feats["O_count"] = smiles.count("O") + smiles.count("o")
+    feats["N_count"] = smiles.count("N") + smiles.count("n")
+    feats["S_count"] = smiles.count("S") + smiles.count("s")
+    feats["P_count"] = smiles.count("P") + smiles.count("p")
+    feats["F_count"] = smiles.count("F") + smiles.count("f")
+    feats["Cl_count"] = smiles.count("Cl") + smiles.count("cl")
+    feats["Br_count"] = smiles.count("Br") + smiles.count("br")
+    feats["I_count"] = smiles.count("I") + smiles.count("i")
 
     # 结构模式
-    feats['has_ring'] = int(any(d in smiles for d in '123456789'))
-    feats['has_double_bond'] = int('=' in smiles)
-    feats['has_triple_bond'] = int('#' in smiles)
-    feats['has_aromatic'] = int(any(c in smiles for c in 'cnos'))
+    feats["has_ring"] = int(any(d in smiles for d in "123456789"))
+    feats["has_double_bond"] = int("=" in smiles)
+    feats["has_triple_bond"] = int("#" in smiles)
+    feats["has_aromatic"] = int(any(c in smiles for c in "cnos"))
 
     # 元素比例
-    feats['O_to_C_ratio'] = feats['O_count'] / (feats['C_count'] + 1e-5)
-    feats['N_to_C_ratio'] = feats['N_count'] / (feats['C_count'] + 1e-5)
-    feats['heteroatom_ratio'] = (
-        feats['O_count'] + feats['N_count'] + feats['S_count'] + feats['P_count']
-    ) / (feats['C_count'] + 1e-5)
+    feats["O_to_C_ratio"] = feats["O_count"] / (feats["C_count"] + 1e-5)
+    feats["N_to_C_ratio"] = feats["N_count"] / (feats["C_count"] + 1e-5)
+    feats["heteroatom_ratio"] = (
+        feats["O_count"] + feats["N_count"] + feats["S_count"] + feats["P_count"]
+    ) / (feats["C_count"] + 1e-5)
 
     # 占位符特征
-    feats['star_count'] = smiles.count('*')
-    feats['R_placeholder_count'] = len(re.findall(r"\[R[0-9']*\]", smiles))
-    feats['any_placeholder'] = int((feats['star_count'] > 0) or (feats['R_placeholder_count'] > 0))
+    feats["star_count"] = smiles.count("*")
+    feats["R_placeholder_count"] = len(re.findall(r"\[R[0-9']*\]", smiles))
+    feats["any_placeholder"] = int(
+        (feats["star_count"] > 0) or (feats["R_placeholder_count"] > 0)
+    )
 
     return feats
 
-def add_smiles_string_features(df: pd.DataFrame, smiles_col: str = 'SMILES') -> pd.DataFrame:
-    """Add SMILES string-based features to DataFrame"""
-    df = df.copy()
-    
-    print(f"Adding SMILES string features to {len(df)} molecules...")
-    
-    smiles_features = []
-    for smiles in tqdm(df[smiles_col], desc="Extracting SMILES string features"):
-        features = _compute_all_string_features(smiles)
-        # Add prefix to distinguish from other features
-        features = {f'smiles_string_{k}': v for k, v in features.items()}
-        smiles_features.append(features)
-    
-    # Convert to DataFrame and merge
-    smiles_df = pd.DataFrame(smiles_features)
-    result_df = pd.concat([df.reset_index(drop=True), smiles_df.reset_index(drop=True)], axis=1)
-    
-    print(f"Added {len(smiles_df.columns)} SMILES string features")
-    return result_df
 
 def clean_smiles(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
@@ -243,36 +251,38 @@ def clean_smiles(df: pd.DataFrame) -> pd.DataFrame:
     print(f"[INFO] After grouping by SMILES and averaging, we have {len(df)} entries.")
     return df
 
+
 def _generate_rdkit_features(smiles_str: str) -> np.ndarray:
     """
     生成RDKit描述符和Morgan指纹
-    
+
     Args:
         smiles_str: SMILES字符串
-        
+
     Returns:
         包含所有RDKit描述符和Morgan指纹的numpy数组
     """
     mol = Chem.MolFromSmiles(smiles_str)
-    
+
     # 获取所有可用的RDKit描述符
     desc_list = [d[0] for d in Descriptors._descList]
     calculator = MoleculeDescriptors.MolecularDescriptorCalculator(desc_list)
-    
+
     morgan_fp_size = 1024
-    
+
     if mol is None:
         return np.full(len(desc_list) + morgan_fp_size, np.nan)
-    
+
     # 计算分子描述符
     descriptors = np.array(calculator.CalcDescriptors(mol))
-    
+
     # 计算Morgan指纹
     mfp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=morgan_fp_size)
     mfp_array = np.array(list(mfp.ToBitString())).astype(int)
-    
+
     # 连接描述符和指纹
     return np.concatenate([descriptors, mfp_array])
+
 
 def _filter_dataset(
     df: pd.DataFrame, column: str, lower_bound: float, upper_bound: float
@@ -304,7 +314,7 @@ def filter_train_data(df: pd.DataFrame) -> pd.DataFrame:
     return de_filtered
 
 
-def replace_all_R_with_C(smi: str) -> str:
+def _replace_all_R_with_C(smi: str) -> str:
     # Replace any R placeholders with C:
     #  - bracketed R-groups like [R], [R'], [R1] -> C
     #  - any remaining uppercase 'R' anywhere -> C
@@ -316,94 +326,66 @@ def replace_all_R_with_C(smi: str) -> str:
     s = re.sub(r"R", "C", s)
     return s
 
-def remove_highly_correlated_features(df: pd.DataFrame, threshold: float = 0.95, 
-                                    exclude_cols: List[str] = None) -> pd.DataFrame:
-    """Remove one of each pair of highly correlated features"""
-    if exclude_cols is None:
-        exclude_cols = ['SMILES', 'id']
-    
+
+def replace_all_R_with_C(df: pd.DataFrame, smiles_col: str = "SMILES") -> pd.DataFrame:
     df = df.copy()
-    
-    # Get feature columns (exclude non-feature columns)
-    feature_cols = [col for col in df.columns if col not in exclude_cols]
-    
-    # Select only numeric columns
-    numeric_cols = df[feature_cols].select_dtypes(include=[np.number]).columns.tolist()
-    
-    if len(numeric_cols) < 2:
-        print("Not enough numeric features for correlation analysis")
-        return df
-    
-    print(f"Analyzing correlations for {len(numeric_cols)} numeric features...")
-    
-    # Calculate correlation matrix
-    corr_matrix = df[numeric_cols].corr().abs()
-    
-    # Find pairs of highly correlated features
-    high_corr_pairs = []
-    for i in range(len(corr_matrix.columns)):
-        for j in range(i+1, len(corr_matrix.columns)):
-            if corr_matrix.iloc[i, j] >= threshold:
-                col1 = corr_matrix.columns[i]
-                col2 = corr_matrix.columns[j]
-                high_corr_pairs.append((col1, col2, corr_matrix.iloc[i, j]))
-    
-    print(f"Found {len(high_corr_pairs)} highly correlated pairs (correlation >= {threshold})")
-    
-    # Decide which features to remove
-    features_to_remove = set()
-    
-    for col1, col2, corr_val in high_corr_pairs:
-        if col1 not in features_to_remove and col2 not in features_to_remove:
-            # Prefer to keep features with less missing values
-            col1_missing = df[col1].isna().sum()
-            col2_missing = df[col2].isna().sum()
-            
-            if col1_missing > col2_missing:
-                features_to_remove.add(col1)
-            elif col2_missing > col1_missing:
-                features_to_remove.add(col2)
-            else:
-                # If equal missing values, remove the one that comes later alphabetically
-                features_to_remove.add(max(col1, col2))
-    
-    # Remove the features
-    if features_to_remove:
-        df = df.drop(columns=list(features_to_remove))
-        print(f"Removed {len(features_to_remove)} highly correlated features")
-    else:
-        print("No features removed")
-    
+    df[smiles_col] = df[smiles_col].apply(_replace_all_R_with_C)
     return df
 
-def load_feature_cache(cache_path):
-    if os.path.exists(cache_path):
-        with open(cache_path, 'rb') as f:
-            return pickle.load(f)
-    return {}
 
-def save_feature_cache(cache_path, cache_dict):
-    with open(cache_path, 'wb') as f:
-        pickle.dump(cache_dict, f)
+def add_smiles_string_features(
+    df: pd.DataFrame, smiles_col: str = "SMILES"
+) -> pd.DataFrame:
+    """Add SMILES string-based features to DataFrame"""
+    df = df.copy()
 
-def add_rdkit_features(df, smiles_col='SMILES', cache_path='dataset/cache/rdkit_features.pkl'):
+    print(f"Adding SMILES string features to {len(df)} molecules...")
+
+    smiles_features = []
+    with Progress() as progress:
+        task = progress.add_task("Extracting SMILES string features", total=len(df))
+        for smiles in df[smiles_col]:
+            features = _compute_all_string_features(smiles)
+            # Add prefix to distinguish from other features
+            features = {f"smiles_string_{k}": v for k, v in features.items()}
+            smiles_features.append(features)
+            progress.update(task, advance=1)
+
+    # Convert to DataFrame and merge
+    smiles_df = pd.DataFrame(smiles_features)
+    result_df = pd.concat(
+        [df.reset_index(drop=True), smiles_df.reset_index(drop=True)], axis=1
+    )
+
+    print(f"Added {len(smiles_df.columns)} SMILES string features")
+    return result_df
+
+
+def add_rdkit_features(
+    df, smiles_col="SMILES", cache_path="datasets/cache/rdkit_features.pkl"
+):
     desc_list_names = [d[0] for d in Descriptors._descList]
-    fp_morgan_cols = [f'mfp_{i}' for i in range(1024)]
-    feature_columns = [f'rdkit_{name}' for name in desc_list_names] + fp_morgan_cols
+    fp_morgan_cols = [f"rdkit_mfp_{i}" for i in range(1024)]  # 修改这里
+    feature_columns = [
+        f"rdkit_{name}" for name in desc_list_names
+    ] + fp_morgan_cols  # 修改这里
 
     cache = load_feature_cache(cache_path)
     new_cache = {}
     features_list = []
 
-    for smiles in tqdm(df[smiles_col], desc="计算RDKit特征"):
-        if pd.isna(smiles):
-            features = np.full(len(feature_columns), np.nan)
-        elif smiles in cache:
-            features = cache[smiles]
-        else:
-            features = _generate_rdkit_features(smiles)
-            new_cache[smiles] = features
-        features_list.append(features)
+    with Progress() as progress:
+        task = progress.add_task("计算RDKit特征", total=len(df))
+        for smiles in df[smiles_col]:
+            if pd.isna(smiles):
+                features = np.full(len(feature_columns), np.nan)
+            elif smiles in cache:
+                features = cache[smiles]
+            else:
+                features = _generate_rdkit_features(smiles)
+                new_cache[smiles] = features
+            features_list.append(features)
+            progress.update(task, advance=1)
 
     # 更新缓存
     cache.update(new_cache)
@@ -411,66 +393,330 @@ def add_rdkit_features(df, smiles_col='SMILES', cache_path='dataset/cache/rdkit_
 
     features_df = pd.DataFrame(features_list, columns=feature_columns)
     features_df.replace([np.inf, -np.inf], np.nan, inplace=True)
-    features_df.fillna(features_df.mean(), inplace=True)
-    result_df = pd.concat([df.reset_index(drop=True), features_df.reset_index(drop=True)], axis=1)
+    # features_df.fillna(features_df.mean(), inplace=True)
+
+    result_df = pd.concat(
+        [df.reset_index(drop=True), features_df.reset_index(drop=True)], axis=1
+    )
     print(f"添加了 {len(feature_columns)} 个RDKit特征")
     return result_df
 
-def align_test_features_with_train(test_df: pd.DataFrame, train_df: pd.DataFrame, 
-                                  target_cols: List[str], id_col: str = 'id') -> pd.DataFrame:
+
+def align_test_features_with_train(
+    test_df: pd.DataFrame,
+    train_df: pd.DataFrame,
+    target_cols: List[str],
+    id_col: str = "id",
+) -> pd.DataFrame:
     """
     确保测试集具有与训练集相同的特征列
-    
+
     Args:
         test_df: 测试集DataFrame
         train_df: 训练集DataFrame
         target_cols: 目标列名列表
         id_col: ID列名
-    
+
     Returns:
         对齐后的测试集DataFrame
     """
     test_df = test_df.copy()
-    
+
     # 获取训练集的特征列（排除目标列）
     train_feature_cols = [col for col in train_df.columns if col not in target_cols]
-    
+
     # 测试集应该有的列：id + 所有训练集特征列（除了id，如果训练集有的话）
     expected_test_cols = [id_col] + [col for col in train_feature_cols if col != id_col]
-    
+
     # 检查缺失的列
     missing_cols = [col for col in expected_test_cols if col not in test_df.columns]
     if missing_cols:
         print(f"Adding missing columns to test set: {missing_cols}")
         for col in missing_cols:
             test_df[col] = np.nan
-    
+
     # 检查多余的列
     extra_cols = [col for col in test_df.columns if col not in expected_test_cols]
     if extra_cols:
-        print(f"Removing extra columns from test set: {extra_cols}")
+        print(
+            f"Removing extra columns from test set: {extra_cols[:10], '...' if len(extra_cols) > 10 else ''}"
+        )
         test_df = test_df.drop(columns=extra_cols)
-    
+
     # 确保列的顺序一致
     test_df = test_df[expected_test_cols]
-    
+
     print(f"Test features aligned: {test_df.shape}")
     return test_df
 
 
+def add_mordred_features(
+    df, smiles_col="SMILES", cache_path="datasets/cache/mordred_features.pkl"
+):
+    mordred_calc = Calculator(mordred_descriptors, ignore_3D=True)
+    cache = load_feature_cache(cache_path)
+    new_cache = {}
+    features_list = []
+
+    # 获取所有Mordred描述符名，并加前缀
+    mordred_desc_names = [str(d) for d in mordred_calc.descriptors]
+    feature_columns = [f"mordred_{name}" for name in mordred_desc_names]
+
+    with Progress() as progress:
+        task = progress.add_task("计算Mordred特征", total=len(df))
+        for smiles in df[smiles_col]:
+            if pd.isna(smiles):
+                features = np.full(len(feature_columns), np.nan)
+            elif smiles in cache:
+                features = cache[smiles]
+            else:
+                mol = Chem.MolFromSmiles(smiles)
+                if mol is None:
+                    features = np.full(len(feature_columns), np.nan)
+                else:
+                    try:
+                        vals = mordred_calc(mol)
+                        # 只保留数值型特征
+                        vals = [
+                            (
+                                vals[d]
+                                if isinstance(
+                                    vals[d], (int, float, np.integer, np.floating)
+                                )
+                                else np.nan
+                            )
+                            for d in mordred_calc.descriptors
+                        ]
+                        features = np.array(vals)
+                    except Exception:
+                        features = np.full(len(feature_columns), np.nan)
+                new_cache[smiles] = features
+            features_list.append(features)
+            progress.update(task, advance=1)
+
+    # 更新缓存
+    cache.update(new_cache)
+    save_feature_cache(cache_path, cache)
+
+    features_df = pd.DataFrame(features_list, columns=feature_columns)
+    features_df.replace([np.inf, -np.inf], np.nan, inplace=True)
+    # features_df.fillna(features_df.median(), inplace=True)
+
+    result_df = pd.concat(
+        [df.reset_index(drop=True), features_df.reset_index(drop=True)], axis=1
+    )
+    print(f"添加了 {len(feature_columns)} 个Mordred特征")
+    return result_df
+
+
+def remove_highly_correlated_features(
+    df: pd.DataFrame, threshold: float = 0.95, exclude_cols: List[str] = None
+) -> pd.DataFrame:
+    """Remove one of each pair of highly correlated features"""
+    if exclude_cols is None:
+        exclude_cols = ["SMILES", "id"]
+
+    df = df.copy()
+
+    # Get feature columns (exclude non-feature columns)
+    feature_cols = [col for col in df.columns if col not in exclude_cols]
+
+    # Select only numeric columns
+    numeric_cols = df[feature_cols].select_dtypes(include=[np.number]).columns.tolist()
+
+    if len(numeric_cols) < 2:
+        print("Not enough numeric features for correlation analysis")
+        return df
+
+    print(f"Analyzing correlations for {len(numeric_cols)} numeric features...")
+
+    # Calculate correlation matrix with progress bar
+    with Progress() as progress:
+        task = progress.add_task("计算相关性矩阵", total=1)
+        corr_matrix = df[numeric_cols].corr().abs()
+        progress.update(task, advance=1)
+
+    # Find pairs of highly correlated features with progress bar
+    high_corr_pairs = []
+    total_pairs = len(corr_matrix.columns) * (len(corr_matrix.columns) - 1) // 2
+
+    with Progress() as progress:
+        task = progress.add_task("查找高相关性特征对", total=total_pairs)
+        for i in range(len(corr_matrix.columns)):
+            for j in range(i + 1, len(corr_matrix.columns)):
+                if corr_matrix.iloc[i, j] >= threshold:
+                    col1 = corr_matrix.columns[i]
+                    col2 = corr_matrix.columns[j]
+                    high_corr_pairs.append((col1, col2, corr_matrix.iloc[i, j]))
+                progress.update(task, advance=1)
+
+    print(
+        f"Found {len(high_corr_pairs)} highly correlated pairs (correlation >= {threshold})"
+    )
+
+    # Decide which features to remove
+    features_to_remove = set()
+
+    with Progress() as progress:
+        task = progress.add_task("决定移除特征", total=len(high_corr_pairs))
+        for col1, col2, corr_val in high_corr_pairs:
+            if col1 not in features_to_remove and col2 not in features_to_remove:
+                # Prefer to keep features with less missing values
+                col1_missing = df[col1].isna().sum()
+                col2_missing = df[col2].isna().sum()
+
+                if col1_missing > col2_missing:
+                    features_to_remove.add(col1)
+                elif col2_missing > col1_missing:
+                    features_to_remove.add(col2)
+                else:
+                    # If equal missing values, remove the one that comes later alphabetically
+                    features_to_remove.add(max(col1, col2))
+            progress.update(task, advance=1)
+
+    # Remove the features
+    if features_to_remove:
+        df = df.drop(columns=list(features_to_remove))
+        print(f"Removed {len(features_to_remove)} highly correlated features")
+    else:
+        print("No features removed")
+
+    return df
+
+
+def drop_high_missing_and_impute_median(
+    df: pd.DataFrame,
+    threshold: float = 0.5,
+    exclude_cols: Optional[List[str]] = None,
+    verbose: bool = True,
+    drop: bool = True,
+    variance_threshold: float = 0.01,
+) -> Tuple[pd.DataFrame, List[str]]:
+    """
+    Drop columns whose missing rate > threshold and low variance features, then fill remaining numeric NaNs with column median.
+
+    Args:
+        df: input DataFrame (will not be modified in-place).
+        threshold: drop column if fraction of NaN > threshold (0..1).
+        exclude_cols: list of column names never to drop (e.g. ["id","SMILES"]).
+        verbose: print summary when True.
+        drop: if True, drop high-missing and low-variance columns; if False, only impute.
+        variance_threshold: variance threshold for removing low-variance features.
+
+    Returns:
+        (cleaned_df, all_dropped_columns)
+    """
+    if exclude_cols is None:
+        exclude_cols = []
+    exclude_cols = set(exclude_cols)
+    df_copy = df.copy()
+
+    # missing fraction per column
+    na_frac = df_copy.isna().mean()
+
+    all_dropped_cols = []
+
+    # Step 1: Drop high missing columns (respect exclude list and drop flag)
+    if drop:
+        drop_cols = [
+            c for c, f in na_frac.items() if (f > threshold and c not in exclude_cols)
+        ]
+        if drop_cols:
+            df_copy = df_copy.drop(columns=drop_cols)
+            all_dropped_cols.extend(drop_cols)
+            if verbose:
+                print(
+                    f"Dropped {len(drop_cols)} high-missing columns (>{threshold*100:.1f}% missing)"
+                )
+
+        # Step 2: Drop low variance features
+        numeric_cols = df_copy.select_dtypes(include=[np.number]).columns.tolist()
+        feature_cols = [col for col in numeric_cols if col not in exclude_cols]
+
+        if feature_cols:
+            variances = df_copy[feature_cols].var()
+            low_var_cols = variances[variances < variance_threshold].index.tolist()
+
+            if low_var_cols:
+                df_copy = df_copy.drop(columns=low_var_cols)
+                all_dropped_cols.extend(low_var_cols)
+                if verbose:
+                    print(
+                        f"Dropped {len(low_var_cols)} low-variance columns (<{variance_threshold} variance)"
+                    )
+    else:
+        if verbose:
+            print("Skipping column dropping (drop=False)")
+
+    # Step 3: Impute numeric columns by median (leave non-numeric as-is)
+    numeric_cols = df_copy.select_dtypes(include=[np.number]).columns.tolist()
+    if numeric_cols:
+        medians = df_copy[numeric_cols].median()
+        df_copy[numeric_cols] = df_copy[numeric_cols].fillna(medians)
+
+    if verbose:
+        kept = df_copy.shape[1]
+        total = len(na_frac)
+        action = "dropped and imputed" if drop else "only imputed"
+        print(
+            f"drop_high_missing_and_impute_median ({action}): dropped {len(all_dropped_cols)} / {total} cols, kept {kept}"
+        )
+        if all_dropped_cols and len(all_dropped_cols) <= 20:
+            print(f"  dropped columns: {all_dropped_cols}")
+        elif all_dropped_cols:
+            print(f"  dropped example (first 20): {all_dropped_cols[:20]}")
+
+    return df_copy, all_dropped_cols
+
+
+def print_feature_statistics(
+    df: pd.DataFrame, prefix_list: List[str] = ["rdkit_", "mordred_", "smiles_string_"]
+):
+    stats = {}
+    for prefix in prefix_list:
+        cols = [c for c in df.columns if c.startswith(prefix)]
+        stats[prefix] = {
+            "count": len(cols),
+            "mean_nan_ratio": df[cols].isna().mean().mean() if cols else None,
+            "median_nan_ratio": df[cols].isna().mean().median() if cols else None,
+        }
+    print("=== 特征统计 ===")
+    for prefix, info in stats.items():
+        print(
+            f"{prefix}: {info['count']} 列, 平均缺失率: {info['mean_nan_ratio']:.4f}, 中位缺失率: {info['median_nan_ratio']:.4f}"
+            if info["count"]
+            else f"{prefix}: 0 列"
+        )
+    print("================")
+    return
+
+
 def process_train_test_data(
-        save_files: bool = False,
-        use_mordred: bool = True,
-        use_rdkit: bool = True,
-        ) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    save_files: bool = False,
+    use_string: bool = True,
+    use_rdkit: bool = True,
+    use_mordred: bool = True,
+    columns: List[str] = None,
+    save_tail: str = None,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     完整的训练和测试数据处理流程，确保特征一致性
-    
+
+    Args:
+        save_files: 是否保存文件
+        use_string: 是否使用SMILES字符串特征
+        use_rdkit: 是否使用RDKit特征
+        use_mordred: 是否使用Mordred特征
+        columns: 指定要保留的列列表，如果提供则跳过相关性分析
+
     Returns:
         处理后的训练集和测试集
     """
-    train, test, sub = get_train_test()
-    print(f"Train shape: {train.shape}, Test shape: {test.shape}, Sub shape: {sub.shape}")
+    train_df, test_df, sub = get_train_test()
+    train, test = train_df.copy(), test_df.copy()
+    print(
+        f"Train shape: {train.shape}, Test shape: {test.shape}, Sub shape: {sub.shape}"
+    )
 
     # 处理训练集
     train = add_extra_data(train)
@@ -482,39 +728,76 @@ def process_train_test_data(
     train = filter_train_data(train)
     print(f"After filtering, Train shape: {train.shape}")
 
-    train = add_smiles_string_features(train, smiles_col='SMILES')
-    print(f"After adding SMILES features, Train shape: {train.shape}")
+    if use_string:
+        train = add_smiles_string_features(train, smiles_col="SMILES")
+        print(f"After adding SMILES features, Train shape: {train.shape}")
 
-    # 添加RDKit特征
+    train = replace_all_R_with_C(train, smiles_col="SMILES")
+    print(f"After replacing R with C, Train shape: {train.shape}")
+
     if use_rdkit:
-        train = add_rdkit_features(train, smiles_col='SMILES')
+        train = add_rdkit_features(train, smiles_col="SMILES")
         print(f"After adding RDKit features, Train shape: {train.shape}")
 
-    target = ['Tg', 'Tc', 'Rg', 'FFV', 'Density']
-    train = remove_highly_correlated_features(train, threshold=0.95, exclude_cols=['id','SMILES'] + target)
-    print(f"After removing highly correlated features, Train shape: {train.shape}")
+    if use_mordred:
+        train = add_mordred_features(train, smiles_col="SMILES")
+        print(f"After adding Mordred features, Train shape: {train.shape}")
 
-    # 处理测试集（基础处理）
-    test = test.copy()
-    test["SMILES"] = test["SMILES"].apply(make_smile_canonical)
-    test = test.dropna(subset=["SMILES"]).reset_index(drop=True)
-    print(f"After cleaning SMILES, Test shape: {test.shape}")
-    
-    test = add_smiles_string_features(test, smiles_col='SMILES')
-    print(f"After adding SMILES features, Test shape: {test.shape}")
+    target = ["Tg", "Tc", "Rg", "FFV", "Density"]
 
-    # 添加RDKit特征到测试集
+    train, dropped_cols = drop_high_missing_and_impute_median(
+        train,
+        threshold=0.5,
+        exclude_cols=["id", "SMILES"] + target,
+        drop=True,
+        variance_threshold=0.01,
+    )
+
+    # 如果指定了columns，直接使用指定的列
+    if columns is not None:
+        print(f"Using specified columns: {len(columns)} columns")
+        # 检查指定的列是否都存在
+        available_cols = [col for col in columns if col in train.columns]
+        missing_cols = [col for col in columns if col not in train.columns]
+
+        if missing_cols:
+            print(f"Warning: Following columns not found in train data: {missing_cols}")
+
+        train = train[available_cols].copy()
+        print(f"After selecting specified columns, Train shape: {train.shape}")
+    else:
+        # 原有的相关性分析逻辑
+        train = remove_highly_correlated_features(
+            train, threshold=0.95, exclude_cols=["id", "SMILES"] + target
+        )
+        print(f"After removing highly correlated features, Train shape: {train.shape}")
+
+    # 处理测试集
+    if use_string:
+        test = add_smiles_string_features(test, smiles_col="SMILES")
+        print(f"After adding SMILES features, Test shape: {test.shape}")
+
+    test = replace_all_R_with_C(test, smiles_col="SMILES")
+    print(f"After replacing R with C, Test shape: {test.shape}")
+
     if use_rdkit:
-        test = add_rdkit_features(test, smiles_col='SMILES')
+        test = add_rdkit_features(test, smiles_col="SMILES")
         print(f"After adding RDKit features, Test shape: {test.shape}")
 
+    if use_mordred:
+        test = add_mordred_features(test, smiles_col="SMILES")
+        print(f"After adding Mordred features, Test shape: {test.shape}")
+
+    test, _ = drop_high_missing_and_impute_median(
+        test, threshold=0.5, exclude_cols=["id", "SMILES"] + target, drop=False
+    )
     # 对齐测试集特征与训练集
     test = align_test_features_with_train(test, train, target_cols=target)
-    
+
     # 验证特征一致性
-    train_features = [col for col in train.columns if col not in target + ['id']]
-    test_features = [col for col in test.columns if col not in ['id']]
-    
+    train_features = [col for col in train.columns if col not in target + ["id"]]
+    test_features = [col for col in test.columns if col not in ["id"]]
+
     if set(train_features) == set(test_features):
         print("✓ Feature consistency check passed")
         print(f"  Train features: {len(train_features)}")
@@ -524,75 +807,190 @@ def process_train_test_data(
         train_only = set(train_features) - set(test_features)
         test_only = set(test_features) - set(train_features)
         if train_only:
-            print(f"  Features only in train: {list(train_only)[:]}...")
+            print(f"  Features only in train: {list(train_only)[:10]}...")
         if test_only:
-            print(f"  Features only in test: {list(test_only)[:]}...")
+            print(f"  Features only in test: {list(test_only)[:10]}...")
 
     if save_files:
-        path = 'datasets/'
-        if not os.path.exists(path):
-            os.makedirs(path)
-        train.to_csv(f"{path}cleaned_train.csv", index=False)
-        test.to_csv(f"{path}cleaned_test.csv", index=False)
-        print("Cleaned data saved to CSV files.")
+        # 要求调用者提供非空 save_tail；函数内部校验并防止覆盖已有文件
+        if not save_tail or not str(save_tail).strip():
+            raise ValueError(
+                "save_files=True requires a non-empty save_tail (base filename)."
+            )
 
+        base = str(save_tail).strip()
+        if base.lower().endswith(".csv"):
+            base = base[:-4]
+
+        path = "datasets/"
+        os.makedirs(path, exist_ok=True)
+
+        train_path = os.path.join(path, f"train_orig_{base}.csv")
+        test_path = os.path.join(path, f"test_orig_{base}.csv")
+
+        # 防止覆盖已存在文件
+        if os.path.exists(train_path) or os.path.exists(test_path):
+            raise FileExistsError(
+                f"Target files already exist: {train_path} or {test_path}. Choose a different save_tail."
+            )
+
+        train.to_csv(train_path, index=False)
+        test.to_csv(test_path, index=False)
+        print(f"Cleaned data saved to:\n  {train_path}\n  {test_path}")
+        print(
+            f'[FINISH] 完成，数据保存在 "{path}" 目录下, 文件名为 "{base}_train.csv" \n和 "{base}_test.csv"'
+        )
+
+    print_feature_statistics(train)
     return train, test
 
-def create_target_specific_datasets(train_df: pd.DataFrame, save_dir: str = "target_datasets/") -> Dict[str, pd.DataFrame]:
+
+def create_datasets(
+    train_df: pd.DataFrame = None,
+    save_dir: str = "datasets/target_datasets/",
+    csv_path: str = "datasets/cleaned_train.csv",
+    targets: Union[str, List[str]] = None,
+) -> Dict[str, pd.DataFrame]:
     """
-    为每个目标变量创建单独的数据集（模仿参考代码的方法）
-    
+    创建目标特异性数据集
+
     Args:
-        train_df: 完整的训练数据
+        train_df: 完整的训练数据（可选）
         save_dir: 保存目录
-        
+        csv_path: 如果train_df为None，从此路径读取数据
+        targets: 目标列表，可以是单个目标或目标列表。如果为None，使用默认的所有目标
+
     Returns:
         每个目标的数据集字典
     """
     import os
+
+    print(f"[START] 创建目标{targets}数据集...")
     os.makedirs(save_dir, exist_ok=True)
-    
-    targets = ['Tg', 'FFV', 'Tc', 'Density', 'Rg']
+
+    # 如果没有提供train_df，从CSV读取
+    if train_df is None:
+        if os.path.exists(csv_path):
+            print(f"Loading train data from {csv_path}")
+            train_df = pd.read_csv(csv_path)
+        else:
+            raise FileNotFoundError(
+                f"CSV file not found at {csv_path}. Please provide train_df or ensure the CSV exists."
+            )
+
+    # 处理targets参数
+    if targets is None:
+        targets = ["Tg", "FFV", "Tc", "Density", "Rg"]
+    elif isinstance(targets, str):
+        targets = [targets]
+    elif isinstance(targets, list) and len(targets) > 1:
+        # 修改这里：明确指定创建多目标数据集的行为
+        print(f"Creating multi-target dataset for targets: {targets}")
+
+        # 检查目标列是否存在
+        missing_targets = [t for t in targets if t not in train_df.columns]
+        if missing_targets:
+            print(f"Warning: Targets {missing_targets} not found in DataFrame columns.")
+            targets = [t for t in targets if t in train_df.columns]
+
+        if not targets:
+            print("Error: No valid targets found.")
+            return {}
+
+        # 统计每个目标的非空样本数
+        for target in targets:
+            non_null_count = train_df[target].notna().sum()
+            print(f"Target '{target}': {non_null_count} non-null samples")
+
+        # 创建多目标数据集（只保留所有目标都有值的样本）
+        multi_target_name = "_".join(targets)
+        multi_target_mask = train_df[targets].notna().all(axis=1)
+        multi_target_df = train_df[multi_target_mask].copy()
+
+        print(f"Samples with all targets {targets} non-null: {multi_target_mask.sum()}")
+
+        target_datasets = {multi_target_name: multi_target_df}
+        multi_target_df.to_csv(f"{save_dir}train_{multi_target_name}.csv", index=False)
+        print(
+            f"Created multi-target dataset '{multi_target_name}' with {len(multi_target_df)} samples"
+        )
+        print_feature_statistics(multi_target_df)
+
+        return target_datasets
+
+    # 如果是单个目标或默认行为，创建独立的数据集
     target_datasets = {}
-    
+
     for target in targets:
+        # 检查目标列是否存在
+        if target not in train_df.columns:
+            print(
+                f"Warning: Target '{target}' not found in DataFrame columns. Skipping."
+            )
+            continue
+
         # 选择有该目标值的行
         target_df = train_df[train_df[target].notna()].copy()
-        
+        # Remove other target columns so the resulting dataset contains only this target
+        props = ["Tg", "Tc", "Rg", "FFV", "Density"]
+        other_targets = [p for p in props if p != target and p in target_df.columns]
+        if other_targets:
+            target_df = target_df.drop(columns=other_targets)
+            print(f"Removed other target columns for '{target}': {other_targets}")
+
         # 保存
         target_datasets[target] = target_df
         target_df.to_csv(f"{save_dir}train_{target}.csv", index=False)
         print(f"Created {target} dataset with {len(target_df)} samples")
-    
+        print_feature_statistics(target_df)
+
     return target_datasets
 
+
 if __name__ == "__main__":
-    '''
-    # 基于化学知识的标签特异性特征
-label_features = {
-    'Tg': [
-        'rdkit_MolLogP', 'rdkit_NumRotatableBonds', 'rdkit_TPSA',
-        'rdkit_NumAromaticRings', 'rdkit_FractionCSP3', 'rdkit_BalabanJ',
-        'rdkit_HallKierAlpha', 'rdkit_branching_index'
-    ],
-    'FFV': [
-        'rdkit_MolWt', 'rdkit_TPSA', 'rdkit_NumRotatableBonds',
-        'rdkit_MolMR', 'rdkit_LabuteASA', 'rdkit_molecular_compactness',
-        'rdkit_NHOHCount', 'rdkit_NumHDonors'
-    ],
-    'Tc': [
-        'rdkit_MolLogP', 'rdkit_MolWt', 'rdkit_NumHDonors', 'rdkit_NumHAcceptors',
-        'rdkit_TPSA', 'rdkit_NumValenceElectrons'
-    ],
-    'Density': [
-        'rdkit_MolWt', 'rdkit_MolMR', 'rdkit_FractionCSP3', 'rdkit_NumHeteroatoms',
-        'rdkit_NumFluorine', 'rdkit_NumChlorine', 'rdkit_molecular_compactness'
-    ],
-    'Rg': [
-        'rdkit_MolWt', 'rdkit_NumRotatableBonds', 'rdkit_BalabanJ',
-        'rdkit_Kappa2', 'rdkit_branching_index', 'rdkit_HallKierAlpha'
-    ]
-}
-    
-    '''
-    train, test = process_train_test_data(save_files=True)
+    """
+        # 基于化学知识的标签特异性特征
+    label_features = {
+        'Tg': [
+            'rdkit_MolLogP', 'rdkit_NumRotatableBonds', 'rdkit_TPSA',
+            'rdkit_NumAromaticRings', 'rdkit_FractionCSP3', 'rdkit_BalabanJ',
+            'rdkit_HallKierAlpha', 'rdkit_branching_index'
+        ],
+        'FFV': [
+            'rdkit_MolWt', 'rdkit_TPSA', 'rdkit_NumRotatableBonds',
+            'rdkit_MolMR', 'rdkit_LabuteASA', 'rdkit_molecular_compactness',
+            'rdkit_NHOHCount', 'rdkit_NumHDonors'
+        ],
+        'Tc': [
+            'rdkit_MolLogP', 'rdkit_MolWt', 'rdkit_NumHDonors', 'rdkit_NumHAcceptors',
+            'rdkit_TPSA', 'rdkit_NumValenceElectrons'
+        ],
+        'Density': [
+            'rdkit_MolWt', 'rdkit_MolMR', 'rdkit_FractionCSP3', 'rdkit_NumHeteroatoms',
+            'rdkit_NumFluorine', 'rdkit_NumChlorine', 'rdkit_molecular_compactness'
+        ],
+        'Rg': [
+            'rdkit_MolWt', 'rdkit_NumRotatableBonds', 'rdkit_BalabanJ',
+            'rdkit_Kappa2', 'rdkit_branching_index', 'rdkit_HallKierAlpha'
+        ]
+    }
+
+    """
+    PROPERTIES = ["Tg", "Tc", "Rg", "FFV", "Density"]
+    with open("datasets/columns.json", "r", encoding="utf-8") as f:
+        columns = json.load(f)
+
+    train, test = process_train_test_data(
+        use_mordred=True,
+        use_rdkit=True,
+        save_files=True,
+        columns=columns,
+        save_tail="1",
+    )
+
+    save_columns_to_json(train, name="used_columns")
+
+    # create target datasets (multi-target if multiple targets specified)
+
+    # for pro in PROPERTIES:
+    #     datasets = create_datasets(targets=pro, csv_path="datasets/train_orig_1.csv", save_dir="datasets/target_datasets/")

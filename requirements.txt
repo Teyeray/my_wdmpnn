@@ -1,0 +1,8 @@
+torch-geometric
+torch
+rdkit==2023.9.6
+openpyxl
+optuna
+optuna-dashboard
+numpy<2.0
+rich
