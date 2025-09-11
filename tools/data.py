@@ -1009,21 +1009,21 @@ if __name__ == "__main__":
     }
 
     """
-    PROPERTIES = ["Tg", "Tc", "Rg", "FFV", "Density"]
-    with open("datasets/used_columns.json", "r", encoding="utf-8") as f:
-        columns = json.load(f)
+    # PROPERTIES = ["Tg", "Tc", "Rg", "FFV", "Density"]
+    # with open("datasets/used_columns.json", "r", encoding="utf-8") as f:
+    #     columns = json.load(f)
 
-    train, test = process_train_test_data(
-        use_mordred=True,
-        use_rdkit=True,
-        save_files=True,
-        columns=columns,
-        save_tail="testing1",
-    )
+    # train, test = process_train_test_data(
+    #     use_mordred=True,
+    #     use_rdkit=True,
+    #     save_files=True,
+    #     columns=columns,
+    #     save_tail="testing1",
+    # )
 
-    save_columns_to_json(train, name="used_columns")
+    # save_columns_to_json(train, name="used_columns")
 
-    # create target datasets (multi-target if multiple targets specified)
+    # # create target datasets (multi-target if multiple targets specified)
 
-    for pro in PROPERTIES:
-        datasets = create_datasets(targets=pro, csv_path="datasets/train_orig_1.csv", save_dir="datasets/target_datasets/")
+    # for pro in PROPERTIES:
+    #     datasets = create_datasets(targets=pro, csv_path="datasets/train_orig_1.csv", save_dir="datasets/target_datasets/")

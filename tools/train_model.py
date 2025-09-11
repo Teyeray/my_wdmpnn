@@ -10,8 +10,8 @@ import numpy as np
 from pathlib import Path
 from sklearn.model_selection import KFold
 
-from utils import set_seed, load_json, save_json, setup_logger, ensure_dir
-from evaluate import regression_metrics, compute_single_wmae, print_cv_summary, get_default_ranges, get_default_counts
+from tools.utils import set_seed, load_json, save_json, setup_logger, ensure_dir
+from tools.evaluate import regression_metrics, compute_single_wmae, print_cv_summary, get_default_ranges, get_default_counts
 
 warnings.filterwarnings('ignore')
 
@@ -32,55 +32,118 @@ def build_model(model_name: str, params: dict):
 
 
 def load_data(target: str, logger):
-    """加载训练和测试数据"""
-    # 首先尝试从data.py获取处理后的数据
+    """加载训练和测试数据，优先使用data.py的处理结果"""
+    
+    # 方法1：直接从data.py获取处理后的数据（推荐）
     try:
         from data import process_train_test_data
-        logger.info("Loading data from data.py...")
+        logger.info("Loading processed data from data.py...")
         train_df, test_df = process_train_test_data()
         
         # 过滤出有目标值的样本
         train_df = train_df[train_df[target].notna()].copy()
+        logger.info(f"Successfully loaded data from data.py")
         
     except Exception as e:
         logger.warning(f"Failed to load from data.py: {e}")
         
-        # 备选：从预处理的CSV加载
-        train_path = f"datasets/target_datasets/train_{target}.csv"
-        test_path = "datasets/test_orig_testing1.csv"
+        # 方法2：从预处理的CSV加载（data.py的输出）
+        processed_train_paths = [
+            f"datasets/train_orig_testing1.csv",
+            f"datasets/train_orig_1.csv", 
+            f"datasets/cleaned_train.csv"
+        ]
         
-        if not os.path.exists(train_path):
-            raise FileNotFoundError(f"Training data not found: {train_path}")
+        processed_test_paths = [
+            f"datasets/test_orig_testing1.csv",
+            f"datasets/test_orig_1.csv",
+            f"datasets/cleaned_test.csv"
+        ]
         
-        logger.info(f"Loading data from CSV: {train_path}")
-        train_df = pd.read_csv(train_path)
-        test_df = pd.read_csv(test_path) if os.path.exists(test_path) else None
+        train_df = None
+        test_df = None
+        
+        # 尝试加载预处理的完整数据
+        for train_path in processed_train_paths:
+            if os.path.exists(train_path):
+                logger.info(f"Loading processed train data from: {train_path}")
+                train_df = pd.read_csv(train_path)
+                train_df = train_df[train_df[target].notna()].copy()
+                break
+        
+        for test_path in processed_test_paths:
+            if os.path.exists(test_path):
+                logger.info(f"Loading processed test data from: {test_path}")
+                test_df = pd.read_csv(test_path)
+                break
+        
+        # 方法3：从target-specific数据集加载（备选）
+        if train_df is None:
+            target_train_path = f"datasets/target_datasets/train_{target}.csv"
+            if os.path.exists(target_train_path):
+                logger.info(f"Loading target-specific data from: {target_train_path}")
+                train_df = pd.read_csv(target_train_path)
+            else:
+                raise FileNotFoundError(
+                    f"No training data found. Tried:\n" +
+                    f"- data.py: {e}\n" +
+                    f"- Processed files: {processed_train_paths}\n" +
+                    f"- Target-specific: {target_train_path}"
+                )
+        
+        if test_df is None:
+            # 如果没有找到预处理的测试集，尝试原始测试集
+            original_test_path = "datasets/test_orig_testing1.csv"
+            if os.path.exists(original_test_path):
+                logger.warning(f"Using original test data: {original_test_path}")
+                test_df = pd.read_csv(original_test_path)
+            else:
+                logger.warning("No test data found - training only mode")
     
     # 准备特征和标签
     all_targets = ['Tg', 'Tc', 'Rg', 'FFV', 'Density']
+    
+    # 智能识别特征列（排除已知的非特征列）
     exclude_cols = ['id', 'SMILES'] + all_targets
     feature_cols = [col for col in train_df.columns if col not in exclude_cols]
     
+    # 检查是否有有效特征
+    if not feature_cols:
+        raise ValueError(f"No feature columns found in training data. Available columns: {train_df.columns.tolist()}")
+    
     X = train_df[feature_cols].values
     y = train_df[target].values
+    train_ids = train_df['id'].values if 'id' in train_df.columns else np.arange(len(train_df))
     
-    logger.info(f"Data shape: X={X.shape}, y={y.shape}")
-    logger.info(f"Features: {len(feature_cols)}")
+    logger.info(f"Training data loaded:")
+    logger.info(f"  - Shape: X={X.shape}, y={y.shape}")
+    logger.info(f"  - Target '{target}': {np.sum(~np.isnan(y))} valid samples")
+    logger.info(f"  - Features: {len(feature_cols)}")
+    logger.info(f"  - Feature types: {train_df[feature_cols].dtypes.value_counts().to_dict()}")
     
+    # 处理测试集
+    X_test, test_ids = None, None
     if test_df is not None:
-        # 确保测试集有相同的特征
+        # 确保测试集有训练集的所有特征
         missing_features = [col for col in feature_cols if col not in test_df.columns]
         if missing_features:
-            logger.warning(f"Missing {len(missing_features)} features in test data")
+            logger.warning(f"Test data missing {len(missing_features)} features - filling with 0")
             for col in missing_features:
                 test_df[col] = 0
         
-        X_test = test_df[feature_cols].values
-        test_ids = test_df['id'].values if 'id' in test_df.columns else np.arange(len(test_df))
+        # 确保测试集特征顺序与训练集一致
+        try:
+            X_test = test_df[feature_cols].values
+            test_ids = test_df['id'].values if 'id' in test_df.columns else np.arange(len(test_df))
+            logger.info(f"Test data loaded: {X_test.shape}")
+        except KeyError as e:
+            logger.error(f"Failed to extract test features: {e}")
+            logger.info(f"Available test columns: {test_df.columns.tolist()}")
+            X_test, test_ids = None, None
     else:
-        X_test, test_ids = None, None
+        logger.info("No test data available")
     
-    return X, y, X_test, test_ids, train_df['id'].values
+    return X, y, X_test, test_ids, train_ids
 
 
 def run_cv(model_name: str, target: str, config: dict, n_folds: int, seed: int, logger):
@@ -114,10 +177,33 @@ def run_cv(model_name: str, target: str, config: dict, n_folds: int, seed: int, 
         # 构建和训练模型
         model = build_model(model_name, params)
         
-        if model_name in ['xgb', 'lgb']:
-            model.fit(X_train, y_train, eval_set=[(X_val, y_val)], **fit_params)
-        else:  # catboost
-            model.fit(X_train, y_train, eval_set=[(X_val, y_val)], **fit_params)
+        # 根据不同模型使用不同的训练方式
+        if model_name == 'xgb':
+            # XGBoost 训练
+            model.fit(
+                X_train, y_train,
+                eval_set=[(X_val, y_val)],
+                early_stopping_rounds=fit_params.get('early_stopping_rounds', 100),
+                verbose=False
+            )
+        elif model_name == 'lgb':
+            # LightGBM 训练
+            model.fit(
+                X_train, y_train,
+                eval_set=[(X_val, y_val)],
+                callbacks=[
+                    lgb.early_stopping(fit_params.get('early_stopping_rounds', 100)),
+                    lgb.log_evaluation(0)  # 关闭训练日志
+                ]
+            )
+        elif model_name == 'cat':
+            # CatBoost 训练
+            model.fit(
+                X_train, y_train,
+                eval_set=[(X_val, y_val)],
+                early_stopping_rounds=fit_params.get('early_stopping_rounds', 100),
+                verbose=False
+            )
         
         # 验证集预测
         val_pred = model.predict(X_val)
@@ -137,12 +223,15 @@ def run_cv(model_name: str, target: str, config: dict, n_folds: int, seed: int, 
         # 可选：保存模型
         model_path = f"outputs/models/{model_name}_{target}_fold{fold}.bin"
         ensure_dir(os.path.dirname(model_path))
-        if model_name == 'xgb':
-            model.save_model(model_path)
-        elif model_name == 'lgb':
-            model.booster_.save_model(model_path)
-        elif model_name == 'cat':
-            model.save_model(model_path)
+        try:
+            if model_name == 'xgb':
+                model.save_model(model_path)
+            elif model_name == 'lgb':
+                model.booster_.save_model(model_path)
+            elif model_name == 'cat':
+                model.save_model(model_path)
+        except Exception as e:
+            logger.warning(f"Failed to save model: {e}")
     
     # 计算CV指标
     cv_metrics = regression_metrics(y, oof_predictions)

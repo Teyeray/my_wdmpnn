@@ -12,7 +12,7 @@ from pathlib import Path
 import pandas as pd
 import re
 
-from utils import set_seed, load_json, save_json, setup_logger, ensure_dir
+from tools.utils import set_seed, load_json, save_json, setup_logger, ensure_dir
 
 # 默认搜索空间
 DEFAULT_SEARCH_SPACES = {
@@ -98,10 +98,10 @@ def create_temp_config(model_name: str, params: dict, base_config: dict):
 
 
 def run_training(model_name: str, target: str, config_path: str, 
-                folds: int, seed: int, logger):
+                folds: int, seed: int, logger, timeout: int = 3600) -> str:
     """通过子进程运行训练"""
     cmd = [
-        'python', '-m', 'utils.train_model',
+        'python', '-m', 'tools.train_model',
         '--model', model_name,
         '--target', target,
         '--config', config_path,
@@ -116,7 +116,7 @@ def run_training(model_name: str, target: str, config_path: str,
             cmd, 
             capture_output=True, 
             text=True, 
-            timeout=3600,  # 1小时超时
+            timeout=timeout,  # 1小时超时
             cwd=os.getcwd()
         )
         

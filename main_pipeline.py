@@ -44,7 +44,7 @@ def main():
         if not args.skip_tune:
             # 超参数优化
             tune_cmd = [
-                'python', '-m', 'utils.tune',
+                'python', '-m', 'tools.tune',
                 '--model', model,
                 '--target', target,
                 '--base-config', f'configs/{model}_base.json',
@@ -81,7 +81,7 @@ def main():
     
     for method, config in ensemble_methods:
         ensemble_cmd = [
-            'python', '-m', 'utils.ensemble',
+            'python', '-m', 'tools.ensemble',
             '--target', target,
             '--models'] + models + [
             '--method', method,
