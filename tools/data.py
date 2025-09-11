@@ -681,11 +681,69 @@ def drop_high_missing_and_impute_median(
         if verbose:
             logger.info("Skipping column dropping (drop=False)")
 
-    # Step 3: Impute numeric columns by median (leave non-numeric as-is)
+    # Step 3: Clean extreme values (inf, -inf, and very large values)
+    numeric_cols = df_copy.select_dtypes(include=[np.number]).columns.tolist()
+    if numeric_cols:
+        if verbose:
+            logger.info("Cleaning extreme values in numeric columns...")
+        
+        # 3.1: Replace inf/-inf with NaN
+        inf_mask = np.isinf(df_copy[numeric_cols].values)
+        if inf_mask.any():
+            inf_count = inf_mask.sum()
+            if verbose:
+                logger.info(f"Found {inf_count} infinite values, replacing with NaN")
+            df_copy[numeric_cols] = df_copy[numeric_cols].replace([np.inf, -np.inf], np.nan)
+        
+        # 3.2: Clip very large values that might cause numerical issues
+        very_large_threshold = 1e15
+        for col in numeric_cols:
+            if col in exclude_cols:
+                continue  # Skip target columns and other excluded columns
+                
+            very_large_mask = np.abs(df_copy[col]) > very_large_threshold
+            if very_large_mask.any():
+                large_count = very_large_mask.sum()
+                if verbose:
+                    logger.info(f"Found {large_count} very large values in '{col}', clipping to ±{very_large_threshold}")
+                df_copy[col] = df_copy[col].clip(-very_large_threshold, very_large_threshold)
+
+    # Drop columns that are completely NaN
+    all_nan_cols = df_copy.columns[df_copy.isna().all()].tolist()
+    if all_nan_cols:
+        df_copy = df_copy.drop(columns=all_nan_cols)
+        all_dropped_cols.extend(all_nan_cols)
+        if verbose:
+            logger.info(f"Dropped {len(all_nan_cols)} all-NaN columns")
+            
+    # Step 4: Impute numeric columns by median (leave non-numeric as-is)
     numeric_cols = df_copy.select_dtypes(include=[np.number]).columns.tolist()
     if numeric_cols:
         medians = df_copy[numeric_cols].median()
+        
+        # Handle cases where median might still be NaN (all values were inf/very large)
+        for col in numeric_cols:
+            if pd.isna(medians[col]):
+                medians[col] = 0.0  # Use 0 as fallback if median is NaN
+                if verbose:
+                    logger.warning(f"Column '{col}' median is NaN, using 0.0 as fallback")
+        
         df_copy[numeric_cols] = df_copy[numeric_cols].fillna(medians)
+        
+        # Final validation: ensure no inf/nan remain in numeric columns
+        final_check_numeric = df_copy[numeric_cols].values
+        inf_remaining = np.isinf(final_check_numeric).sum()
+        nan_remaining = np.isnan(final_check_numeric).sum()
+        
+        if inf_remaining > 0 or nan_remaining > 0:
+            if verbose:
+                logger.warning(f"Still found inf: {inf_remaining}, nan: {nan_remaining} after cleaning")
+            # Force clean any remaining issues
+            df_copy[numeric_cols] = df_copy[numeric_cols].apply(
+                lambda x: pd.to_numeric(x, errors='coerce')
+            ).fillna(0)
+            if verbose:
+                logger.warning("Applied final force cleaning with 0 replacement")
 
     if verbose:
         kept = df_copy.shape[1]
@@ -876,109 +934,6 @@ def process_train_test_data(
 
     print_feature_statistics(train)
     return train, test
-
-
-def create_datasets(
-    train_df: pd.DataFrame = None,
-    save_dir: str = "datasets/target_datasets/",
-    csv_path: str = "datasets/cleaned_train.csv",
-    targets: Union[str, List[str]] = None,
-) -> Dict[str, pd.DataFrame]:
-    """
-    创建目标特异性数据集
-
-    Args:
-        train_df: 完整的训练数据（可选）
-        save_dir: 保存目录
-        csv_path: 如果train_df为None，从此路径读取数据
-        targets: 目标列表，可以是单个目标或目标列表。如果为None，使用默认的所有目标
-
-    Returns:
-        每个目标的数据集字典
-    """
-    import os
-
-    logger.info(f"[START] Creating target {targets} datasets...")
-    os.makedirs(save_dir, exist_ok=True)
-
-    # 如果没有提供train_df，从CSV读取
-    if train_df is None:
-        if os.path.exists(csv_path):
-            logger.info(f"Loading train data from {csv_path}")
-            train_df = pd.read_csv(csv_path)
-        else:
-            raise FileNotFoundError(
-                f"CSV file not found at {csv_path}. Please provide train_df or ensure the CSV exists."
-            )
-
-    # 处理targets参数
-    if targets is None:
-        targets = ["Tg", "FFV", "Tc", "Density", "Rg"]
-    elif isinstance(targets, str):
-        targets = [targets]
-    elif isinstance(targets, list) and len(targets) > 1:
-        # 修改这里：明确指定创建多目标数据集的行为
-        logger.info(f"Creating multi-target dataset for targets: {targets}")
-
-        # 检查目标列是否存在
-        missing_targets = [t for t in targets if t not in train_df.columns]
-        if missing_targets:
-            logger.warning(f"Targets {missing_targets} not found in DataFrame columns.")
-            targets = [t for t in targets if t in train_df.columns]
-
-        if not targets:
-            logger.error("No valid targets found.")
-            return {}
-
-        # 统计每个目标的非空样本数
-        for target in targets:
-            non_null_count = train_df[target].notna().sum()
-            logger.info(f"Target '{target}': {non_null_count} non-null samples")
-
-        # 创建多目标数据集（只保留所有目标都有值的样本）
-        multi_target_name = "_".join(targets)
-        multi_target_mask = train_df[targets].notna().all(axis=1)
-        multi_target_df = train_df[multi_target_mask].copy()
-
-        logger.info(f"Samples with all targets {targets} non-null: {multi_target_mask.sum()}")
-
-        target_datasets = {multi_target_name: multi_target_df}
-        multi_target_df.to_csv(f"{save_dir}train_{multi_target_name}.csv", index=False)
-        logger.info(
-            f"Created multi-target dataset '{multi_target_name}' with {len(multi_target_df)} samples"
-        )
-        print_feature_statistics(multi_target_df)
-
-        return target_datasets
-
-    # 如果是单个目标或默认行为，创建独立的数据集
-    target_datasets = {}
-
-    for target in targets:
-        # 检查目标列是否存在
-        if target not in train_df.columns:
-            logger.warning(
-                f"Target '{target}' not found in DataFrame columns. Skipping."
-            )
-            continue
-
-        # 选择有该目标值的行
-        target_df = train_df[train_df[target].notna()].copy()
-        # Remove other target columns so the resulting dataset contains only this target
-        props = ["Tg", "Tc", "Rg", "FFV", "Density"]
-        other_targets = [p for p in props if p != target and p in target_df.columns]
-        if other_targets:
-            target_df = target_df.drop(columns=other_targets)
-            logger.info(f"Removed other target columns for '{target}': {other_targets}")
-
-        # 保存
-        target_datasets[target] = target_df
-        target_df.to_csv(f"{save_dir}train_{target}.csv", index=False)
-        logger.info(f"Created {target} dataset with {len(target_df)} samples")
-        print_feature_statistics(target_df)
-
-    return target_datasets
-
 
 if __name__ == "__main__":
     """

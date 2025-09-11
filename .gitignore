@@ -10,6 +10,8 @@ kaggle/working/qm9/*
 .DS_Store
 # C extensions
 *.so
+catboost_info/*
+outputs/*
 test_data.ipynb
 optuna_qm9_pretrain.db
 checkpoints/*

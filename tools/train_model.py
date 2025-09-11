@@ -31,74 +31,47 @@ def build_model(model_name: str, params: dict):
         raise ValueError(f"Unsupported model: {model_name}")
 
 
-def load_data(target: str, logger):
-    """加载训练和测试数据，优先使用data.py的处理结果"""
+def load_data(target: str, logger, train_path: str, test_path: str = None):
+    """加载训练和测试数据从指定的CSV文件路径"""
     
-    # 方法1：直接从data.py获取处理后的数据（推荐）
+    # 加载训练数据
     try:
-        from data import process_train_test_data
-        logger.info("Loading processed data from data.py...")
-        train_df, test_df = process_train_test_data()
+        logger.info(f"Loading training data from: {train_path}")
+        if not os.path.exists(train_path):
+            raise FileNotFoundError(f"Training data file not found: {train_path}")
+        
+        train_df = pd.read_csv(train_path)
+        logger.info(f"Training data loaded: {train_df.shape}")
         
         # 过滤出有目标值的样本
+        original_size = len(train_df)
         train_df = train_df[train_df[target].notna()].copy()
-        logger.info(f"Successfully loaded data from data.py")
+        filtered_size = len(train_df)
+        
+        if filtered_size == 0:
+            raise ValueError(f"No valid samples found for target '{target}' in training data")
+        
+        logger.info(f"Filtered training data: {original_size} -> {filtered_size} samples with valid '{target}' values")
         
     except Exception as e:
-        logger.warning(f"Failed to load from data.py: {e}")
+        logger.error(f"Failed to load training data: {e}")
+        raise
+    
+    # 加载测试数据（可选）
+    test_df = None
+    if test_path and os.path.exists(test_path):
+        try:
+            logger.info(f"Loading test data from: {test_path}")
+            test_df = pd.read_csv(test_path)
+            logger.info(f"Test data loaded: {test_df.shape}")
+        except Exception as e:
+            logger.warning(f"Failed to load test data: {e}")
+            test_df = None
+    elif test_path:
+        logger.warning(f"Test data file not found: {test_path}")
+    else:
+        logger.info("No test data path provided")
         
-        # 方法2：从预处理的CSV加载（data.py的输出）
-        processed_train_paths = [
-            f"datasets/train_orig_testing1.csv",
-            f"datasets/train_orig_1.csv", 
-            f"datasets/cleaned_train.csv"
-        ]
-        
-        processed_test_paths = [
-            f"datasets/test_orig_testing1.csv",
-            f"datasets/test_orig_1.csv",
-            f"datasets/cleaned_test.csv"
-        ]
-        
-        train_df = None
-        test_df = None
-        
-        # 尝试加载预处理的完整数据
-        for train_path in processed_train_paths:
-            if os.path.exists(train_path):
-                logger.info(f"Loading processed train data from: {train_path}")
-                train_df = pd.read_csv(train_path)
-                train_df = train_df[train_df[target].notna()].copy()
-                break
-        
-        for test_path in processed_test_paths:
-            if os.path.exists(test_path):
-                logger.info(f"Loading processed test data from: {test_path}")
-                test_df = pd.read_csv(test_path)
-                break
-        
-        # 方法3：从target-specific数据集加载（备选）
-        if train_df is None:
-            target_train_path = f"datasets/target_datasets/train_{target}.csv"
-            if os.path.exists(target_train_path):
-                logger.info(f"Loading target-specific data from: {target_train_path}")
-                train_df = pd.read_csv(target_train_path)
-            else:
-                raise FileNotFoundError(
-                    f"No training data found. Tried:\n" +
-                    f"- data.py: {e}\n" +
-                    f"- Processed files: {processed_train_paths}\n" +
-                    f"- Target-specific: {target_train_path}"
-                )
-        
-        if test_df is None:
-            # 如果没有找到预处理的测试集，尝试原始测试集
-            original_test_path = "datasets/test_orig_testing1.csv"
-            if os.path.exists(original_test_path):
-                logger.warning(f"Using original test data: {original_test_path}")
-                test_df = pd.read_csv(original_test_path)
-            else:
-                logger.warning("No test data found - training only mode")
     
     # 准备特征和标签
     all_targets = ['Tg', 'Tc', 'Rg', 'FFV', 'Density']
@@ -146,12 +119,13 @@ def load_data(target: str, logger):
     return X, y, X_test, test_ids, train_ids
 
 
-def run_cv(model_name: str, target: str, config: dict, n_folds: int, seed: int, logger):
+def run_cv(model_name: str, target: str, config: dict, n_folds: int, seed: int, logger,
+           train_path: str, test_path: str = None):
     """执行交叉验证训练"""
     logger.info(f"Starting CV: {model_name.upper()} for {target}")
     
     # 加载数据
-    X, y, X_test, test_ids, train_ids = load_data(target, logger)
+    X, y, X_test, test_ids, train_ids = load_data(target, logger, train_path, test_path)
     
     # 准备配置
     params = config.get('params', {})
@@ -183,11 +157,12 @@ def run_cv(model_name: str, target: str, config: dict, n_folds: int, seed: int, 
             model.fit(
                 X_train, y_train,
                 eval_set=[(X_val, y_val)],
-                early_stopping_rounds=fit_params.get('early_stopping_rounds', 100),
+                #early_stopping_rounds=fit_params.get('early_stopping_rounds', 100),
                 verbose=False
             )
         elif model_name == 'lgb':
             # LightGBM 训练
+            import lightgbm as lgb
             model.fit(
                 X_train, y_train,
                 eval_set=[(X_val, y_val)],
@@ -309,6 +284,12 @@ def main():
     parser.add_argument('--seed', type=int, default=42,
                        help='Random seed')
     
+    # 数据路径参数
+    parser.add_argument('--train-path', required=True,
+                       help='Path to training CSV file')
+    parser.add_argument('--test-path', default=None,
+                       help='Path to test CSV file (optional)')
+    
     args = parser.parse_args()
     
     # 设置随机种子
@@ -320,6 +301,8 @@ def main():
     
     logger.info(f"Starting training: {args.model} for {args.target}")
     logger.info(f"Config: {args.config}")
+    logger.info(f"Training data: {args.train_path}")
+    logger.info(f"Test data: {args.test_path}")
     logger.info(f"Folds: {args.folds}, Seed: {args.seed}")
     
     try:
@@ -328,7 +311,10 @@ def main():
         logger.info("Config loaded successfully")
         
         # 执行训练
-        results = run_cv(args.model, args.target, config, args.folds, args.seed, logger)
+        results = run_cv(
+            args.model, args.target, config, args.folds, args.seed, logger,
+            args.train_path, args.test_path
+        )
         
         # 保存预测结果
         save_predictions(results, args.model, args.target, logger)

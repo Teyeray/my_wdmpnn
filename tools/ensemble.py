@@ -67,32 +67,23 @@ def load_test_predictions(target: str, model_list: list, logger):
     return test_data, test_ids
 
 
-def load_target_values(target: str, train_ids: np.ndarray, logger):
+def load_target_values(target: str, train_ids: np.ndarray, train_path: str, logger):
     """加载目标值"""
     try:
-        # 首先尝试从data.py获取
-        from data import process_train_test_data
-        train_df, _ = process_train_test_data()
+        # 直接从CSV文件加载
+        train_df = pd.read_csv(train_path)
         train_df = train_df[train_df[target].notna()].copy()
         
         # 按ID排序确保顺序一致
         train_df = train_df.set_index('id').loc[train_ids].reset_index()
         y_true = train_df[target].values
         
+        logger.info(f"Loaded {len(y_true)} target values for {target} from {train_path}")
+        return y_true
+        
     except Exception as e:
-        logger.warning(f"Failed to load from data.py: {e}")
-        
-        # 备选：从CSV文件加载
-        train_path = f"datasets/target_datasets/train_{target}.csv"
-        if not os.path.exists(train_path):
-            raise FileNotFoundError(f"Training data not found: {train_path}")
-        
-        train_df = pd.read_csv(train_path)
-        train_df = train_df.set_index('id').loc[train_ids].reset_index()
-        y_true = train_df[target].values
-    
-    logger.info(f"Loaded {len(y_true)} target values for {target}")
-    return y_true
+        logger.error(f"Failed to load target values from {train_path}: {e}")
+        raise
 
 
 def weighted_average_ensemble(oof_data: dict, test_data: dict, weights: dict, logger):
@@ -211,6 +202,7 @@ def save_ensemble_predictions(target: str, method: str, oof_pred: np.ndarray,
     """保存集成预测结果"""
     ensure_dir("outputs/oof")
     ensure_dir("outputs/preds")
+    ensure_dir("outputs/submissions")
     
     # 保存OOF预测
     oof_df = pd.DataFrame({
@@ -230,6 +222,72 @@ def save_ensemble_predictions(target: str, method: str, oof_pred: np.ndarray,
         test_path = f"outputs/preds/{method}_{target}.csv"
         test_df.to_csv(test_path, index=False)
         logger.info(f"Ensemble test predictions saved: {test_path}")
+
+
+def create_submission_file(target: str, method: str, test_pred: np.ndarray, 
+                         test_ids: np.ndarray, logger):
+    """创建Kaggle提交文件"""
+    if test_pred is None:
+        logger.warning("No test predictions available, skipping submission file creation")
+        return None
+    
+    ensure_dir("outputs/submissions")
+    
+    # 创建提交格式的DataFrame
+    submission_df = pd.DataFrame({
+        'id': test_ids,
+        target: test_pred
+    })
+    
+    # 保存提交文件
+    submission_path = f"outputs/submissions/{method}_{target}_submission.csv"
+    submission_df.to_csv(submission_path, index=False)
+    
+    logger.info(f"Submission file created: {submission_path}")
+    logger.info(f"Submission shape: {submission_df.shape}")
+    logger.info(f"Target {target} prediction range: [{test_pred.min():.6f}, {test_pred.max():.6f}]")
+    
+    return submission_path
+
+
+def create_multi_target_submission(method: str, targets: list, test_ids: np.ndarray, logger):
+    """创建多目标提交文件（从已有的单目标预测文件合并）"""
+    ensure_dir("outputs/submissions")
+    
+    # 初始化DataFrame
+    submission_df = pd.DataFrame({'id': test_ids})
+    
+    missing_targets = []
+    found_targets = []
+    
+    for target in targets:
+        pred_path = f"outputs/preds/{method}_{target}.csv"
+        if os.path.exists(pred_path):
+            pred_df = pd.read_csv(pred_path)
+            # 确保ID顺序一致
+            pred_df = pred_df.set_index('id').loc[test_ids].reset_index()
+            submission_df[target] = pred_df['pred'].values
+            found_targets.append(target)
+        else:
+            logger.warning(f"Prediction file not found: {pred_path}")
+            missing_targets.append(target)
+    
+    if found_targets:
+        # 保存多目标提交文件
+        multi_submission_path = f"outputs/submissions/{method}_multi_target_submission.csv"
+        submission_df.to_csv(multi_submission_path, index=False)
+        
+        logger.info(f"Multi-target submission file created: {multi_submission_path}")
+        logger.info(f"Included targets: {found_targets}")
+        logger.info(f"Submission shape: {submission_df.shape}")
+        
+        if missing_targets:
+            logger.warning(f"Missing targets: {missing_targets}")
+        
+        return multi_submission_path
+    else:
+        logger.error("No prediction files found for any target")
+        return None
 
 
 def log_final_result(target: str, method: str, metrics: dict, wmae: float):
@@ -256,6 +314,12 @@ def main():
                        help='Custom output name (default: method name)')
     parser.add_argument('--seed', type=int, default=42,
                        help='Random seed')
+    parser.add_argument('--create-multi-submission', action='store_true',
+                       help='Create multi-target submission file from existing predictions')
+    
+    # 数据路径参数
+    parser.add_argument('--train-path', required=True,
+                       help='Path to training CSV file')
     
     args = parser.parse_args()
     
@@ -269,6 +333,7 @@ def main():
     
     logger.info(f"Starting ensemble: {args.method} for {args.target}")
     logger.info(f"Models: {args.models}")
+    logger.info(f"Training data: {args.train_path}")
     
     try:
         # 加载配置
@@ -285,7 +350,7 @@ def main():
             raise ValueError("No OOF predictions found")
         
         # 加载真实目标值
-        y_true = load_target_values(args.target, train_ids, logger)
+        y_true = load_target_values(args.target, train_ids, args.train_path, logger)
         
         # 执行集成
         if args.method == 'weighted':
@@ -309,10 +374,25 @@ def main():
         save_ensemble_predictions(args.target, method_name, oof_pred, test_pred,
                                 train_ids, test_ids, logger)
         
+        # 创建Kaggle提交文件
+        submission_path = create_submission_file(args.target, method_name, test_pred, 
+                                               test_ids, logger)
+        
         # 输出最终结果
         log_final_result(args.target, method_name, metrics, wmae)
         
-        logger.info("Ensemble completed successfully")
+        if submission_path:
+            logger.info(f"✅ Ensemble completed successfully!")
+            logger.info(f"📁 Submission file ready: {submission_path}")
+        else:
+            logger.info("⚠️ Ensemble completed, but no submission file created (no test predictions)")
+        
+        # 如果请求创建多目标提交文件
+        if args.create_multi_submission and test_ids is not None:
+            all_targets = ['Tg', 'Tc', 'Rg', 'FFV', 'Density']
+            multi_path = create_multi_target_submission(method_name, all_targets, test_ids, logger)
+            if multi_path:
+                logger.info(f"🎯 Multi-target submission file created: {multi_path}")
         
     except Exception as e:
         logger.error(f"Ensemble failed: {str(e)}")
