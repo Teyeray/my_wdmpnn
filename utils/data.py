@@ -2,6 +2,7 @@ import ast
 import math
 import torch
 import pickle
+import logging
 import numpy as np
 import os, re, json
 import pandas as pd
@@ -20,13 +21,34 @@ from rdkit.Chem.rdMolDescriptors import CalcNumRotatableBonds
 from typing import List, Tuple, Optional, Dict, Union, Iterable
 from mordred import Calculator, descriptors as mordred_descriptors
 
+# Configure logger
+def setup_logger(name: str = "data_processor", level: int = logging.INFO) -> logging.Logger:
+    """Setup logger with consistent formatting"""
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
+    
+    if not logger.handlers:
+        handler = logging.StreamHandler()
+        formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            datefmt='%H:%M:%S'
+        )
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+    
+    return logger
+
+# Global logger instance
+logger = setup_logger()
+
 
 def save_columns_to_json(df: pd.DataFrame, name: str):
+    """Save DataFrame columns to JSON file"""
     cols = df.columns.tolist()
     os.makedirs("datasets", exist_ok=True)
     with open(f"datasets/{name}.json", "w", encoding="utf-8") as f:
         json.dump(cols, f, ensure_ascii=False, indent=2)
-    print(f"Saved datasets/{name}.json")
+    logger.info(f"Saved datasets/{name}.json with {len(cols)} columns")
     return cols
 
 
@@ -68,9 +90,9 @@ def get_data_paths(print_paths: bool = False) -> dict:
             paths[key] = path.resolve()
         if paths[key].exists():
             if print_paths:
-                print(f"{key} found at {path} [OK]")
+                logger.info(f"{key} found at {path} [OK]")
         else:
-            print(f"{key} not found at {path} [ERROR]")
+            logger.error(f"{key} not found at {path} [ERROR]")
     return paths
 
 
@@ -90,34 +112,34 @@ def combine_data(
 ) -> pd.DataFrame:
     if isinstance(extra, pd.DataFrame):
         df_extra = extra.rename(columns={source_name: target}).copy()
-        print(f"---" * 20)
-        print(
+        logger.info("=" * 60)
+        logger.info(
             f"[START] Adding extra data targeting '{source_name}' to train target '{target}'."
         )
     else:
         if not Path(extra).exists():
-            print(
-                f"[ERROR] Extra data file '{extra}' does not exist. Returning original train data."
+            logger.error(
+                f"Extra data file '{extra}' does not exist. Returning original train data."
             )
             return train
         df_extra = pd.read_csv(extra).rename(columns={source_name: target}).copy()
-        print(f"---" * 20)
-        print(
+        logger.info("=" * 60)
+        logger.info(
             f"[START] Adding extra data from '{extra}' targeting '{source_name}' to train target '{target}'."
         )
 
-    print(f"[INFO] Train data shape: {train.shape}")
+    logger.info(f"Train data shape: {train.shape}")
     df_train = train.copy()
 
-    print(
-        f"[INFO] Extra data shape: {df_extra.shape}, columns: {df_extra.columns.tolist()}"
+    logger.info(
+        f"Extra data shape: {df_extra.shape}, columns: {df_extra.columns.tolist()}"
     )
     df_extra = df_extra[["SMILES", target]].dropna(subset=["SMILES", target])
     df_extra = df_extra.groupby("SMILES", as_index=False).mean()
 
     # Find common SMILES
     common = set(df_train["SMILES"]) & set(df_extra["SMILES"])
-    print(f"[INFO] Found {len(common)} overlapping SMILES.")
+    logger.info(f"Found {len(common)} overlapping SMILES.")
 
     if common:
         for smi in common:
@@ -127,17 +149,17 @@ def combine_data(
                 # If train's target is NaN, use extra's value
                 extra_value = df_extra.loc[df_extra["SMILES"] == smi, target].values[0]
                 df_train.loc[df_train["SMILES"] == smi, target] = extra_value
-                print(
+                logger.info(
                     f"[ADD] Updated target for SMILES '{smi}' and value '{extra_value}' from extra data target '{target}'."
                 )
             else:
                 # Otherwise, drop the SMILES from extra
                 df_extra.drop(df_extra[df_extra["SMILES"] == smi].index, inplace=True)
-                # print(f"[INFO] Dropped SMILES '{smi}' from extra data.")
+                # logger.debug(f"Dropped SMILES '{smi}' from extra data.")
 
     # Merge train and extra
     df_combined = pd.concat([df_train, df_extra], ignore_index=True)
-    print(f"[INFO] Combined data shape: {df_combined.shape}")
+    logger.info(f"Combined data shape: {df_combined.shape}")
     return df_combined
 
 
@@ -241,14 +263,15 @@ def _compute_all_string_features(smiles: str) -> dict:
 
 
 def clean_smiles(df: pd.DataFrame) -> pd.DataFrame:
+    """Clean and canonicalize SMILES strings, then group duplicates"""
     df = df.copy()
     df["SMILES"] = df["SMILES"].apply(make_smile_canonical)
     df = df.dropna(subset=["SMILES"]).reset_index(drop=True)
 
     gb = df.groupby("SMILES", as_index=False)
-    print(f"[INFO] We have {len(df)} entries, {len(gb)} are unique SMILES.")
+    logger.info(f"We have {len(df)} entries, {len(gb)} are unique SMILES.")
     df = gb.mean(numeric_only=True)
-    print(f"[INFO] After grouping by SMILES and averaging, we have {len(df)} entries.")
+    logger.info(f"After grouping by SMILES and averaging, we have {len(df)} entries.")
     return df
 
 
@@ -287,20 +310,21 @@ def _generate_rdkit_features(smiles_str: str) -> np.ndarray:
 def _filter_dataset(
     df: pd.DataFrame, column: str, lower_bound: float, upper_bound: float
 ) -> pd.DataFrame:
+    """Filter dataset by column value range while preserving NaN values"""
     if column not in df.columns:
         raise ValueError(f"Column '{column}' not found in DataFrame.")
-    print(
-        f"[INFO] Original data shape: {df.shape}; non-null '{column}': {df[column].notna().sum()}"
+    logger.info(
+        f"Original data shape: {df.shape}; non-null '{column}': {df[column].notna().sum()}"
     )
     # Keep rows that are within the range, or those where the column is missing (skip filtering if missing)
     mask_in_range = (df[column] >= lower_bound) & (df[column] <= upper_bound)
     mask_keep = df[column].isna() | mask_in_range
     filtered_df = df[mask_keep].copy()
     dropped = len(df) - len(filtered_df)
-    print(
-        f"[INFO] Dropped {dropped} rows from '{column}' (kept NaN and values in [{lower_bound}, {upper_bound}])."
+    logger.info(
+        f"Dropped {dropped} rows from '{column}' (kept NaN and values in [{lower_bound}, {upper_bound}])."
     )
-    print(f"[INFO] Filtered data shape: {filtered_df.shape}")
+    logger.info(f"Filtered data shape: {filtered_df.shape}")
     return filtered_df
 
 
@@ -339,7 +363,7 @@ def add_smiles_string_features(
     """Add SMILES string-based features to DataFrame"""
     df = df.copy()
 
-    print(f"Adding SMILES string features to {len(df)} molecules...")
+    logger.info(f"Adding SMILES string features to {len(df)} molecules...")
 
     smiles_features = []
     with Progress() as progress:
@@ -357,13 +381,16 @@ def add_smiles_string_features(
         [df.reset_index(drop=True), smiles_df.reset_index(drop=True)], axis=1
     )
 
-    print(f"Added {len(smiles_df.columns)} SMILES string features")
+    logger.info(f"Added {len(smiles_df.columns)} SMILES string features")
     return result_df
 
 
 def add_rdkit_features(
     df, smiles_col="SMILES", cache_path="datasets/cache/rdkit_features.pkl"
 ):
+    """Add RDKit-based features to DataFrame with progress tracking and caching"""
+    logger.info("Starting RDKit feature extraction...")
+    
     desc_list_names = [d[0] for d in Descriptors._descList]
     fp_morgan_cols = [f"rdkit_mfp_{i}" for i in range(1024)]  # 修改这里
     feature_columns = [
@@ -374,9 +401,14 @@ def add_rdkit_features(
     new_cache = {}
     features_list = []
 
+    logger.info(f"Processing {len(df)} molecules for RDKit features...")
+    
     with Progress() as progress:
         task = progress.add_task("计算RDKit特征", total=len(df))
-        for smiles in df[smiles_col]:
+        for idx, smiles in enumerate(df[smiles_col]):
+            if idx % 1000 == 0:
+                logger.info(f"Processing RDKit features: {idx+1}/{len(df)} ({(idx+1)/len(df)*100:.1f}%)")
+                
             if pd.isna(smiles):
                 features = np.full(len(feature_columns), np.nan)
             elif smiles in cache:
@@ -390,6 +422,7 @@ def add_rdkit_features(
     # 更新缓存
     cache.update(new_cache)
     save_feature_cache(cache_path, cache)
+    logger.info(f"Updated cache with {len(new_cache)} new features")
 
     features_df = pd.DataFrame(features_list, columns=feature_columns)
     features_df.replace([np.inf, -np.inf], np.nan, inplace=True)
@@ -398,7 +431,7 @@ def add_rdkit_features(
     result_df = pd.concat(
         [df.reset_index(drop=True), features_df.reset_index(drop=True)], axis=1
     )
-    print(f"添加了 {len(feature_columns)} 个RDKit特征")
+    logger.info(f"Added {len(feature_columns)} RDKit features to DataFrame")
     return result_df
 
 
@@ -431,22 +464,22 @@ def align_test_features_with_train(
     # 检查缺失的列
     missing_cols = [col for col in expected_test_cols if col not in test_df.columns]
     if missing_cols:
-        print(f"Adding missing columns to test set: {missing_cols}")
+        logger.info(f"Adding missing columns to test set: {missing_cols}")
         for col in missing_cols:
             test_df[col] = np.nan
 
     # 检查多余的列
     extra_cols = [col for col in test_df.columns if col not in expected_test_cols]
     if extra_cols:
-        print(
-            f"Removing extra columns from test set: {extra_cols[:10], '...' if len(extra_cols) > 10 else ''}"
+        logger.info(
+            f"Removing extra columns from test set: {extra_cols[:10]}{', ...' if len(extra_cols) > 10 else ''}"
         )
         test_df = test_df.drop(columns=extra_cols)
 
     # 确保列的顺序一致
     test_df = test_df[expected_test_cols]
 
-    print(f"Test features aligned: {test_df.shape}")
+    logger.info(f"Test features aligned: {test_df.shape}")
     return test_df
 
 
@@ -505,7 +538,7 @@ def add_mordred_features(
     result_df = pd.concat(
         [df.reset_index(drop=True), features_df.reset_index(drop=True)], axis=1
     )
-    print(f"添加了 {len(feature_columns)} 个Mordred特征")
+    logger.info(f"Added {len(feature_columns)} Mordred features to DataFrame")
     return result_df
 
 
@@ -525,10 +558,10 @@ def remove_highly_correlated_features(
     numeric_cols = df[feature_cols].select_dtypes(include=[np.number]).columns.tolist()
 
     if len(numeric_cols) < 2:
-        print("Not enough numeric features for correlation analysis")
+        logger.warning("Not enough numeric features for correlation analysis")
         return df
 
-    print(f"Analyzing correlations for {len(numeric_cols)} numeric features...")
+    logger.info(f"Analyzing correlations for {len(numeric_cols)} numeric features...")
 
     # Calculate correlation matrix with progress bar
     with Progress() as progress:
@@ -550,7 +583,7 @@ def remove_highly_correlated_features(
                     high_corr_pairs.append((col1, col2, corr_matrix.iloc[i, j]))
                 progress.update(task, advance=1)
 
-    print(
+    logger.info(
         f"Found {len(high_corr_pairs)} highly correlated pairs (correlation >= {threshold})"
     )
 
@@ -577,9 +610,9 @@ def remove_highly_correlated_features(
     # Remove the features
     if features_to_remove:
         df = df.drop(columns=list(features_to_remove))
-        print(f"Removed {len(features_to_remove)} highly correlated features")
+        logger.info(f"Removed {len(features_to_remove)} highly correlated features")
     else:
-        print("No features removed")
+        logger.info("No features removed")
 
     return df
 
@@ -625,7 +658,7 @@ def drop_high_missing_and_impute_median(
             df_copy = df_copy.drop(columns=drop_cols)
             all_dropped_cols.extend(drop_cols)
             if verbose:
-                print(
+                logger.info(
                     f"Dropped {len(drop_cols)} high-missing columns (>{threshold*100:.1f}% missing)"
                 )
 
@@ -641,12 +674,12 @@ def drop_high_missing_and_impute_median(
                 df_copy = df_copy.drop(columns=low_var_cols)
                 all_dropped_cols.extend(low_var_cols)
                 if verbose:
-                    print(
+                    logger.info(
                         f"Dropped {len(low_var_cols)} low-variance columns (<{variance_threshold} variance)"
                     )
     else:
         if verbose:
-            print("Skipping column dropping (drop=False)")
+            logger.info("Skipping column dropping (drop=False)")
 
     # Step 3: Impute numeric columns by median (leave non-numeric as-is)
     numeric_cols = df_copy.select_dtypes(include=[np.number]).columns.tolist()
@@ -658,13 +691,13 @@ def drop_high_missing_and_impute_median(
         kept = df_copy.shape[1]
         total = len(na_frac)
         action = "dropped and imputed" if drop else "only imputed"
-        print(
+        logger.info(
             f"drop_high_missing_and_impute_median ({action}): dropped {len(all_dropped_cols)} / {total} cols, kept {kept}"
         )
         if all_dropped_cols and len(all_dropped_cols) <= 20:
-            print(f"  dropped columns: {all_dropped_cols}")
+            logger.info(f"  dropped columns: {all_dropped_cols}")
         elif all_dropped_cols:
-            print(f"  dropped example (first 20): {all_dropped_cols[:20]}")
+            logger.info(f"  dropped example (first 20): {all_dropped_cols[:20]}")
 
     return df_copy, all_dropped_cols
 
@@ -680,14 +713,14 @@ def print_feature_statistics(
             "mean_nan_ratio": df[cols].isna().mean().mean() if cols else None,
             "median_nan_ratio": df[cols].isna().mean().median() if cols else None,
         }
-    print("=== 特征统计 ===")
+    logger.info("=== Feature Statistics ===")
     for prefix, info in stats.items():
-        print(
-            f"{prefix}: {info['count']} 列, 平均缺失率: {info['mean_nan_ratio']:.4f}, 中位缺失率: {info['median_nan_ratio']:.4f}"
+        logger.info(
+            f"{prefix}: {info['count']} columns, avg missing: {info['mean_nan_ratio']:.4f}, median missing: {info['median_nan_ratio']:.4f}"
             if info["count"]
-            else f"{prefix}: 0 列"
+            else f"{prefix}: 0 columns"
         )
-    print("================")
+    logger.info("=" * 30)
     return
 
 
@@ -714,34 +747,34 @@ def process_train_test_data(
     """
     train_df, test_df, sub = get_train_test()
     train, test = train_df.copy(), test_df.copy()
-    print(
+    logger.info(
         f"Train shape: {train.shape}, Test shape: {test.shape}, Sub shape: {sub.shape}"
     )
 
     # 处理训练集
     train = add_extra_data(train)
-    print(f"After adding extra data, Train shape: {train.shape}")
+    logger.info(f"After adding extra data, Train shape: {train.shape}")
 
     train = clean_smiles(train)
-    print(f"After cleaning SMILES, Train shape: {train.shape}")
+    logger.info(f"After cleaning SMILES, Train shape: {train.shape}")
 
     train = filter_train_data(train)
-    print(f"After filtering, Train shape: {train.shape}")
+    logger.info(f"After filtering, Train shape: {train.shape}")
 
     if use_string:
         train = add_smiles_string_features(train, smiles_col="SMILES")
-        print(f"After adding SMILES features, Train shape: {train.shape}")
+        logger.info(f"After adding SMILES features, Train shape: {train.shape}")
 
     train = replace_all_R_with_C(train, smiles_col="SMILES")
-    print(f"After replacing R with C, Train shape: {train.shape}")
+    logger.info(f"After replacing R with C, Train shape: {train.shape}")
 
     if use_rdkit:
         train = add_rdkit_features(train, smiles_col="SMILES")
-        print(f"After adding RDKit features, Train shape: {train.shape}")
+        logger.info(f"After adding RDKit features, Train shape: {train.shape}")
 
     if use_mordred:
         train = add_mordred_features(train, smiles_col="SMILES")
-        print(f"After adding Mordred features, Train shape: {train.shape}")
+        logger.info(f"After adding Mordred features, Train shape: {train.shape}")
 
     target = ["Tg", "Tc", "Rg", "FFV", "Density"]
 
@@ -755,38 +788,38 @@ def process_train_test_data(
 
     # 如果指定了columns，直接使用指定的列
     if columns is not None:
-        print(f"Using specified columns: {len(columns)} columns")
+        logger.info(f"Using specified columns: {len(columns)} columns")
         # 检查指定的列是否都存在
         available_cols = [col for col in columns if col in train.columns]
         missing_cols = [col for col in columns if col not in train.columns]
 
         if missing_cols:
-            print(f"Warning: Following columns not found in train data: {missing_cols}")
+            logger.warning(f"Following columns not found in train data: {missing_cols}")
 
         train = train[available_cols].copy()
-        print(f"After selecting specified columns, Train shape: {train.shape}")
+        logger.info(f"After selecting specified columns, Train shape: {train.shape}")
     else:
         # 原有的相关性分析逻辑
         train = remove_highly_correlated_features(
             train, threshold=0.95, exclude_cols=["id", "SMILES"] + target
         )
-        print(f"After removing highly correlated features, Train shape: {train.shape}")
+        logger.info(f"After removing highly correlated features, Train shape: {train.shape}")
 
     # 处理测试集
     if use_string:
         test = add_smiles_string_features(test, smiles_col="SMILES")
-        print(f"After adding SMILES features, Test shape: {test.shape}")
+        logger.info(f"After adding SMILES features, Test shape: {test.shape}")
 
     test = replace_all_R_with_C(test, smiles_col="SMILES")
-    print(f"After replacing R with C, Test shape: {test.shape}")
+    logger.info(f"After replacing R with C, Test shape: {test.shape}")
 
     if use_rdkit:
         test = add_rdkit_features(test, smiles_col="SMILES")
-        print(f"After adding RDKit features, Test shape: {test.shape}")
+        logger.info(f"After adding RDKit features, Test shape: {test.shape}")
 
     if use_mordred:
         test = add_mordred_features(test, smiles_col="SMILES")
-        print(f"After adding Mordred features, Test shape: {test.shape}")
+        logger.info(f"After adding Mordred features, Test shape: {test.shape}")
 
     test, _ = drop_high_missing_and_impute_median(
         test, threshold=0.5, exclude_cols=["id", "SMILES"] + target, drop=False
@@ -799,17 +832,17 @@ def process_train_test_data(
     test_features = [col for col in test.columns if col not in ["id"]]
 
     if set(train_features) == set(test_features):
-        print("✓ Feature consistency check passed")
-        print(f"  Train features: {len(train_features)}")
-        print(f"  Test features: {len(test_features)}")
+        logger.info("✓ Feature consistency check passed")
+        logger.info(f"  Train features: {len(train_features)}")
+        logger.info(f"  Test features: {len(test_features)}")
     else:
-        print("✗ Feature consistency check failed!")
+        logger.error("✗ Feature consistency check failed!")
         train_only = set(train_features) - set(test_features)
         test_only = set(test_features) - set(train_features)
         if train_only:
-            print(f"  Features only in train: {list(train_only)[:10]}...")
+            logger.error(f"  Features only in train: {list(train_only)[:10]}...")
         if test_only:
-            print(f"  Features only in test: {list(test_only)[:10]}...")
+            logger.error(f"  Features only in test: {list(test_only)[:10]}...")
 
     if save_files:
         # 要求调用者提供非空 save_tail；函数内部校验并防止覆盖已有文件
@@ -836,9 +869,9 @@ def process_train_test_data(
 
         train.to_csv(train_path, index=False)
         test.to_csv(test_path, index=False)
-        print(f"Cleaned data saved to:\n  {train_path}\n  {test_path}")
-        print(
-            f'[FINISH] 完成，数据保存在 "{path}" 目录下, 文件名为 "{base}_train.csv" \n和 "{base}_test.csv"'
+        logger.info(f"Cleaned data saved to:\n  {train_path}\n  {test_path}")
+        logger.info(
+            f'[FINISH] Completed, data saved in "{path}" directory as "{base}_train.csv" and "{base}_test.csv"'
         )
 
     print_feature_statistics(train)
@@ -865,13 +898,13 @@ def create_datasets(
     """
     import os
 
-    print(f"[START] 创建目标{targets}数据集...")
+    logger.info(f"[START] Creating target {targets} datasets...")
     os.makedirs(save_dir, exist_ok=True)
 
     # 如果没有提供train_df，从CSV读取
     if train_df is None:
         if os.path.exists(csv_path):
-            print(f"Loading train data from {csv_path}")
+            logger.info(f"Loading train data from {csv_path}")
             train_df = pd.read_csv(csv_path)
         else:
             raise FileNotFoundError(
@@ -885,33 +918,33 @@ def create_datasets(
         targets = [targets]
     elif isinstance(targets, list) and len(targets) > 1:
         # 修改这里：明确指定创建多目标数据集的行为
-        print(f"Creating multi-target dataset for targets: {targets}")
+        logger.info(f"Creating multi-target dataset for targets: {targets}")
 
         # 检查目标列是否存在
         missing_targets = [t for t in targets if t not in train_df.columns]
         if missing_targets:
-            print(f"Warning: Targets {missing_targets} not found in DataFrame columns.")
+            logger.warning(f"Targets {missing_targets} not found in DataFrame columns.")
             targets = [t for t in targets if t in train_df.columns]
 
         if not targets:
-            print("Error: No valid targets found.")
+            logger.error("No valid targets found.")
             return {}
 
         # 统计每个目标的非空样本数
         for target in targets:
             non_null_count = train_df[target].notna().sum()
-            print(f"Target '{target}': {non_null_count} non-null samples")
+            logger.info(f"Target '{target}': {non_null_count} non-null samples")
 
         # 创建多目标数据集（只保留所有目标都有值的样本）
         multi_target_name = "_".join(targets)
         multi_target_mask = train_df[targets].notna().all(axis=1)
         multi_target_df = train_df[multi_target_mask].copy()
 
-        print(f"Samples with all targets {targets} non-null: {multi_target_mask.sum()}")
+        logger.info(f"Samples with all targets {targets} non-null: {multi_target_mask.sum()}")
 
         target_datasets = {multi_target_name: multi_target_df}
         multi_target_df.to_csv(f"{save_dir}train_{multi_target_name}.csv", index=False)
-        print(
+        logger.info(
             f"Created multi-target dataset '{multi_target_name}' with {len(multi_target_df)} samples"
         )
         print_feature_statistics(multi_target_df)
@@ -924,8 +957,8 @@ def create_datasets(
     for target in targets:
         # 检查目标列是否存在
         if target not in train_df.columns:
-            print(
-                f"Warning: Target '{target}' not found in DataFrame columns. Skipping."
+            logger.warning(
+                f"Target '{target}' not found in DataFrame columns. Skipping."
             )
             continue
 
@@ -936,12 +969,12 @@ def create_datasets(
         other_targets = [p for p in props if p != target and p in target_df.columns]
         if other_targets:
             target_df = target_df.drop(columns=other_targets)
-            print(f"Removed other target columns for '{target}': {other_targets}")
+            logger.info(f"Removed other target columns for '{target}': {other_targets}")
 
         # 保存
         target_datasets[target] = target_df
         target_df.to_csv(f"{save_dir}train_{target}.csv", index=False)
-        print(f"Created {target} dataset with {len(target_df)} samples")
+        logger.info(f"Created {target} dataset with {len(target_df)} samples")
         print_feature_statistics(target_df)
 
     return target_datasets
@@ -977,7 +1010,7 @@ if __name__ == "__main__":
 
     """
     PROPERTIES = ["Tg", "Tc", "Rg", "FFV", "Density"]
-    with open("datasets/columns.json", "r", encoding="utf-8") as f:
+    with open("datasets/used_columns.json", "r", encoding="utf-8") as f:
         columns = json.load(f)
 
     train, test = process_train_test_data(
@@ -985,12 +1018,12 @@ if __name__ == "__main__":
         use_rdkit=True,
         save_files=True,
         columns=columns,
-        save_tail="1",
+        save_tail="testing1",
     )
 
     save_columns_to_json(train, name="used_columns")
 
     # create target datasets (multi-target if multiple targets specified)
 
-    # for pro in PROPERTIES:
-    #     datasets = create_datasets(targets=pro, csv_path="datasets/train_orig_1.csv", save_dir="datasets/target_datasets/")
+    for pro in PROPERTIES:
+        datasets = create_datasets(targets=pro, csv_path="datasets/train_orig_1.csv", save_dir="datasets/target_datasets/")
