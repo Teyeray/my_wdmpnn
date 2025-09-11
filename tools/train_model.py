@@ -210,6 +210,28 @@ def run_cv(model_name: str, target: str, config: dict, n_folds: int, seed: int, 
                 model.save_model(model_path)
         except Exception as e:
             logger.warning(f"Failed to save model: {e}")
+        # 保存特征重要性
+        
+        if model_name == 'xgb':
+            imp = model.get_booster().get_score(importance_type="gain")
+            df_imp = pd.DataFrame(list(imp.items()), columns=["feature", "importance"])
+        elif model_name == 'lgb':
+            imp = model.booster_.feature_importance(importance_type="gain")
+            df_imp = pd.DataFrame({
+                "feature": model.booster_.feature_name(),
+                "importance": imp
+            })
+        elif model_name == 'cat':
+            imp = model.get_feature_importance()
+            df_imp = pd.DataFrame({
+                "feature": model.feature_names_,
+                "importance": imp
+            })
+
+        imp_path = f"outputs/importance/{model_name}_{target}_fold{fold}.csv"
+        ensure_dir(os.path.dirname(imp_path))
+        df_imp.to_csv(imp_path, index=False)
+        logger.info(f"Feature importance saved: {imp_path}")
     
     # 计算CV指标
     cv_metrics = regression_metrics(y, oof_predictions)
