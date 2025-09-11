@@ -1,1 +1,0 @@
-python -m tools.tune --model xgb --target Tg --base-config configs/xgb_base.json --search-space configs/search_space.json --n-trials 2 --study-name XGB_Tg_test1

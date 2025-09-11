@@ -1,0 +1,7 @@
+PROPERTIES = ["Tg", "FFV", "Tc", "Rg", "Density"]
+
+train:
+python -m tools.train_model --model xgb --target FFV --config configs/xgb_base.json --train-path datasets/train_orig_testing1.csv --test-path datasets/test_orig_testing1.csv
+
+fine_tune:
+python -m tools.tune --model xgb --target Tc --base-config configs/xgb_base.json --search-space configs/search_space.json  --train-path datasets/train_orig_testing1.csv --test-path datasets/test-orig-testing1.csv --n-trials 50 --study-name xgb_tc_finetune_1

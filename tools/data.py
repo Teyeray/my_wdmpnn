@@ -718,32 +718,38 @@ def drop_high_missing_and_impute_median(
             
     # Step 4: Impute numeric columns by median (leave non-numeric as-is)
     numeric_cols = df_copy.select_dtypes(include=[np.number]).columns.tolist()
-    if numeric_cols:
-        medians = df_copy[numeric_cols].median()
+    
+    feature_numeric_cols = [col for col in numeric_cols if col not in exclude_cols]
+    
+    if feature_numeric_cols:
+        medians = df_copy[feature_numeric_cols].median()
         
         # Handle cases where median might still be NaN (all values were inf/very large)
-        for col in numeric_cols:
+        for col in feature_numeric_cols:
             if pd.isna(medians[col]):
                 medians[col] = 0.0  # Use 0 as fallback if median is NaN
                 if verbose:
                     logger.warning(f"Column '{col}' median is NaN, using 0.0 as fallback")
         
-        df_copy[numeric_cols] = df_copy[numeric_cols].fillna(medians)
+        df_copy[feature_numeric_cols] = df_copy[feature_numeric_cols].fillna(medians)
         
-        # Final validation: ensure no inf/nan remain in numeric columns
-        final_check_numeric = df_copy[numeric_cols].values
+        if verbose:
+            logger.info(f"Imputed {len(feature_numeric_cols)} feature columns, excluded {len(set(numeric_cols) & exclude_cols)} target columns")
+        
+        # Final validation: ensure no inf/nan remain in feature columns only
+        final_check_numeric = df_copy[feature_numeric_cols].values
         inf_remaining = np.isinf(final_check_numeric).sum()
         nan_remaining = np.isnan(final_check_numeric).sum()
         
         if inf_remaining > 0 or nan_remaining > 0:
             if verbose:
-                logger.warning(f"Still found inf: {inf_remaining}, nan: {nan_remaining} after cleaning")
-            # Force clean any remaining issues
-            df_copy[numeric_cols] = df_copy[numeric_cols].apply(
+                logger.warning(f"Still found inf: {inf_remaining}, nan: {nan_remaining} after cleaning in feature columns")
+            # Force clean any remaining issues in feature columns only
+            df_copy[feature_numeric_cols] = df_copy[feature_numeric_cols].apply(
                 lambda x: pd.to_numeric(x, errors='coerce')
             ).fillna(0)
             if verbose:
-                logger.warning("Applied final force cleaning with 0 replacement")
+                logger.warning("Applied final force cleaning with 0 replacement to feature columns only")
 
     if verbose:
         kept = df_copy.shape[1]
@@ -803,6 +809,12 @@ def process_train_test_data(
     Returns:
         处理后的训练集和测试集
     """
+    if save_files:
+                # 防止覆盖已存在文件
+        if os.path.exists(train_path) or os.path.exists(test_path):
+            raise FileExistsError(
+                f"Target files already exist: {train_path} or {test_path}. Choose a different save_tail."
+            )
     train_df, test_df, sub = get_train_test()
     train, test = train_df.copy(), test_df.copy()
     logger.info(
@@ -919,12 +931,6 @@ def process_train_test_data(
         train_path = os.path.join(path, f"train_orig_{base}.csv")
         test_path = os.path.join(path, f"test_orig_{base}.csv")
 
-        # 防止覆盖已存在文件
-        if os.path.exists(train_path) or os.path.exists(test_path):
-            raise FileExistsError(
-                f"Target files already exist: {train_path} or {test_path}. Choose a different save_tail."
-            )
-
         train.to_csv(train_path, index=False)
         test.to_csv(test_path, index=False)
         logger.info(f"Cleaned data saved to:\n  {train_path}\n  {test_path}")
@@ -964,11 +970,11 @@ if __name__ == "__main__":
     }
 
     """
-    PROPERTIES = ["Tg", "Tc", "Rg", "FFV", "Density"]
+    PROPERTIES = ["Tg", "FFV", "Tc", "Rg", "Density"]
     columns = None
     
-    # with open("datasets/used_columns.json", "r", encoding="utf-8") as f:
-    #     columns = json.load(f)
+    with open("complete_columns.json", "r", encoding="utf-8") as f:
+        columns = json.load(f)
 
     train, test = process_train_test_data(
         use_mordred=True,
