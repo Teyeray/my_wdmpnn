@@ -26,7 +26,10 @@ def build_model(model_name: str, params: dict):
         return lgb.LGBMRegressor(**params, verbose=-1)
     elif model_name == 'cat':
         import catboost as cat
-        return cat.CatBoostRegressor(**params, verbose=False)
+        cat_params = params.copy()
+        if 'verbose' not in cat_params:
+            cat_params['verbose'] = False
+        return cat.CatBoostRegressor(**cat_params)
     else:
         raise ValueError(f"Unsupported model: {model_name}")
 
