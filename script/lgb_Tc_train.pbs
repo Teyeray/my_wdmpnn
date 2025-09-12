@@ -1,0 +1,29 @@
+#!/bin/bash
+#PBS -N lgb_Tc_train
+#PBS -P personal-e1350261
+#PBS -l select=1:ncpus=32:mem=32gb
+#PBS -l walltime=12:00:00
+#PBS -j oe
+#PBS -o logs/lgb_Tc_train.out
+
+set -euo pipefail
+cd $PBS_O_WORKDIR
+
+source /scratch/e1350261/venvs/ai39/bin/activate
+
+which python
+python --version
+
+seed=42
+
+for i in $(seq 1 20); do
+    echo "[Iter $i] Running with seed=$seed"
+    python -m tools.train_model \
+        --model lgb \
+        --target Tc \
+        --config configs/best_lgb_Tc.json \
+        --train-path datasets/train_orig_vanda1.csv \
+        --test-path datasets/test_orig_vanda1.csv \
+        --folds 10 \
+        --seed $seed
+done

@@ -1,0 +1,665 @@
+/scratch/e1350261/venvs/ai39/bin/python
+Python 3.9.18
+[Iter 1] Running with seed=42
+21:26:03 - INFO - Starting training: lgb for Tc
+21:26:03 - INFO - Config: configs/best_lgb_Tc.json
+21:26:03 - INFO - Training data: datasets/train_orig_vanda1.csv
+21:26:03 - INFO - Test data: datasets/test_orig_vanda1.csv
+21:26:03 - INFO - Folds: 10, Seed: 42
+21:26:03 - INFO - Config loaded successfully
+21:26:03 - INFO - Starting CV: LGB for Tc
+21:26:03 - INFO - No previous best model found
+21:26:03 - INFO - Loading training data from: datasets/train_orig_vanda1.csv
+21:26:04 - INFO - Training data loaded: (10054, 1007)
+21:26:04 - INFO - Filtered training data: 10054 -> 857 samples with valid 'Tc' values
+21:26:04 - INFO - Loading test data from: datasets/test_orig_vanda1.csv
+21:26:04 - INFO - Test data loaded: (3, 1002)
+21:26:04 - INFO - Training data loaded:
+21:26:04 - INFO -   - Shape: X=(857, 1000), y=(857,)
+21:26:04 - INFO -   - Target 'Tc': 857 valid samples
+21:26:04 - INFO -   - Features: 1000
+21:26:04 - INFO -   - Feature types: {dtype('float64'): 991, dtype('int64'): 9}
+21:26:04 - INFO - Test data loaded: (3, 1000)
+21:26:04 - INFO - Training fold 1/10
+21:26:05 - INFO - Fold 1: wMAE=0.049631
+21:26:05 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold0.csv
+21:26:05 - INFO - Training fold 2/10
+21:26:05 - INFO - Fold 2: wMAE=0.046337
+21:26:05 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold1.csv
+21:26:05 - INFO - Training fold 3/10
+21:26:05 - INFO - Fold 3: wMAE=0.061089
+21:26:05 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold2.csv
+21:26:05 - INFO - Training fold 4/10
+21:26:05 - INFO - Fold 4: wMAE=0.044545
+21:26:05 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold3.csv
+21:26:05 - INFO - Training fold 5/10
+21:26:05 - INFO - Fold 5: wMAE=0.049168
+21:26:05 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold4.csv
+21:26:05 - INFO - Training fold 6/10
+21:26:06 - INFO - Fold 6: wMAE=0.058340
+21:26:06 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold5.csv
+21:26:06 - INFO - Training fold 7/10
+21:26:06 - INFO - Fold 7: wMAE=0.061693
+21:26:06 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold6.csv
+21:26:06 - INFO - Training fold 8/10
+21:26:06 - INFO - Fold 8: wMAE=0.057231
+21:26:06 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold7.csv
+21:26:06 - INFO - Training fold 9/10
+21:26:07 - INFO - Fold 9: wMAE=0.060560
+21:26:07 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold8.csv
+21:26:07 - INFO - Training fold 10/10
+21:26:07 - INFO - Fold 10: wMAE=0.060027
+21:26:07 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold9.csv
+21:26:07 - INFO - 🎉 New best models saved! CV wMAE improved by inf
+21:26:07 - INFO -    Previous best: inf
+21:26:07 - INFO -    Current best:  0.0548
+21:26:07 - INFO -    Saved to: outputs/models/Tc_lgb_0.0548
+21:26:07 - INFO -    Files: 10 fold models
+21:26:07 - INFO -    Total size: 2,355,748 bytes
+21:26:07 - INFO - OOF predictions saved: outputs/oof/lgb_Tc.csv
+21:26:07 - INFO - Test predictions saved: outputs/preds/lgb_Tc.csv
+21:26:07 - INFO - Training completed successfully
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[265]	valid_0's l2: 0.00151916
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[207]	valid_0's l2: 0.000868515
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[120]	valid_0's l2: 0.00199639
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[73]	valid_0's l2: 0.000921577
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[219]	valid_0's l2: 0.0012187
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[595]	valid_0's l2: 0.00147723
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[194]	valid_0's l2: 0.00204383
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[88]	valid_0's l2: 0.00152083
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[259]	valid_0's l2: 0.00217798
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[84]	valid_0's l2: 0.00138321
+============================================================
+CV Summary: LGB - Tc
+============================================================
+Fold  1: MAE=0.023699 | RMSE=0.038976 | R²=0.7984
+Fold  2: MAE=0.022126 | RMSE=0.029471 | R²=0.9000
+Fold  3: MAE=0.029170 | RMSE=0.044681 | R²=0.7635
+Fold  4: MAE=0.021270 | RMSE=0.030357 | R²=0.8488
+Fold  5: MAE=0.023478 | RMSE=0.034910 | R²=0.8231
+Fold  6: MAE=0.027857 | RMSE=0.038435 | R²=0.7917
+Fold  7: MAE=0.029458 | RMSE=0.045209 | R²=0.7408
+Fold  8: MAE=0.027328 | RMSE=0.038998 | R²=0.7773
+Fold  9: MAE=0.028918 | RMSE=0.046669 | R²=0.7714
+Fold 10: MAE=0.028663 | RMSE=0.037192 | R²=0.8082
+
+CV MAE: 0.026197 ± 0.003024
+
+CV RMSE: 0.038490 ± 0.005593
+
+CV R2: 0.802327 ± 0.043767
+CV wMAE: 0.054847
+============================================================
+[RESULT] Target=Tc | Model=LGB | Folds=10 | CV_MAE=0.026189 | CV_RMSE=0.038886 | CV_R2=0.803899 | CV_wMAE=0.054847
+[Iter 2] Running with seed=42
+21:26:09 - INFO - Starting training: lgb for Tc
+21:26:09 - INFO - Config: configs/best_lgb_Tc.json
+21:26:09 - INFO - Training data: datasets/train_orig_vanda1.csv
+21:26:09 - INFO - Test data: datasets/test_orig_vanda1.csv
+21:26:09 - INFO - Folds: 10, Seed: 42
+21:26:09 - INFO - Config loaded successfully
+21:26:09 - INFO - Starting CV: LGB for Tc
+21:26:09 - INFO - Current best model: Tc_lgb_0.0548 (CV wMAE: 0.0548)
+21:26:09 - INFO - Loading training data from: datasets/train_orig_vanda1.csv
+21:26:10 - INFO - Training data loaded: (10054, 1007)
+21:26:10 - INFO - Filtered training data: 10054 -> 857 samples with valid 'Tc' values
+21:26:10 - INFO - Loading test data from: datasets/test_orig_vanda1.csv
+21:26:10 - INFO - Test data loaded: (3, 1002)
+21:26:10 - INFO - Training data loaded:
+21:26:10 - INFO -   - Shape: X=(857, 1000), y=(857,)
+21:26:10 - INFO -   - Target 'Tc': 857 valid samples
+21:26:10 - INFO -   - Features: 1000
+21:26:10 - INFO -   - Feature types: {dtype('float64'): 991, dtype('int64'): 9}
+21:26:10 - INFO - Test data loaded: (3, 1000)
+21:26:10 - INFO - Training fold 1/10
+21:26:10 - INFO - Fold 1: wMAE=0.049631
+21:26:10 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold0.csv
+21:26:10 - INFO - Training fold 2/10
+21:26:10 - INFO - Fold 2: wMAE=0.046337
+21:26:10 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold1.csv
+21:26:10 - INFO - Training fold 3/10
+21:26:10 - INFO - Fold 3: wMAE=0.061089
+21:26:10 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold2.csv
+21:26:10 - INFO - Training fold 4/10
+21:26:11 - INFO - Fold 4: wMAE=0.044545
+21:26:11 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold3.csv
+21:26:11 - INFO - Training fold 5/10
+21:26:11 - INFO - Fold 5: wMAE=0.049168
+21:26:11 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold4.csv
+21:26:11 - INFO - Training fold 6/10
+21:26:11 - INFO - Fold 6: wMAE=0.058340
+21:26:11 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold5.csv
+21:26:11 - INFO - Training fold 7/10
+21:26:12 - INFO - Fold 7: wMAE=0.061693
+21:26:12 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold6.csv
+21:26:12 - INFO - Training fold 8/10
+21:26:12 - INFO - Fold 8: wMAE=0.057231
+21:26:12 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold7.csv
+21:26:12 - INFO - Training fold 9/10
+21:26:12 - INFO - Fold 9: wMAE=0.060560
+21:26:12 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold8.csv
+21:26:12 - INFO - Training fold 10/10
+21:26:12 - INFO - Fold 10: wMAE=0.060027
+21:26:12 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold9.csv
+21:26:12 - INFO - Models not saved - CV wMAE 0.0548 vs best 0.0548 (gap: +0.0000)
+21:26:12 - INFO - Current best model directory: outputs/models/Tc_lgb_0.0548
+21:26:12 - INFO - OOF predictions saved: outputs/oof/lgb_Tc.csv
+21:26:12 - INFO - Test predictions saved: outputs/preds/lgb_Tc.csv
+21:26:12 - INFO - Training completed successfully
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[265]	valid_0's l2: 0.00151916
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[207]	valid_0's l2: 0.000868515
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[120]	valid_0's l2: 0.00199639
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[73]	valid_0's l2: 0.000921577
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[219]	valid_0's l2: 0.0012187
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[595]	valid_0's l2: 0.00147723
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[194]	valid_0's l2: 0.00204383
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[88]	valid_0's l2: 0.00152083
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[259]	valid_0's l2: 0.00217798
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[84]	valid_0's l2: 0.00138321
+============================================================
+CV Summary: LGB - Tc
+============================================================
+Fold  1: MAE=0.023699 | RMSE=0.038976 | R²=0.7984
+Fold  2: MAE=0.022126 | RMSE=0.029471 | R²=0.9000
+Fold  3: MAE=0.029170 | RMSE=0.044681 | R²=0.7635
+Fold  4: MAE=0.021270 | RMSE=0.030357 | R²=0.8488
+Fold  5: MAE=0.023478 | RMSE=0.034910 | R²=0.8231
+Fold  6: MAE=0.027857 | RMSE=0.038435 | R²=0.7917
+Fold  7: MAE=0.029458 | RMSE=0.045209 | R²=0.7408
+Fold  8: MAE=0.027328 | RMSE=0.038998 | R²=0.7773
+Fold  9: MAE=0.028918 | RMSE=0.046669 | R²=0.7714
+Fold 10: MAE=0.028663 | RMSE=0.037192 | R²=0.8082
+
+CV MAE: 0.026197 ± 0.003024
+
+CV RMSE: 0.038490 ± 0.005593
+
+CV R2: 0.802327 ± 0.043767
+CV wMAE: 0.054847
+============================================================
+[RESULT] Target=Tc | Model=LGB | Folds=10 | CV_MAE=0.026189 | CV_RMSE=0.038886 | CV_R2=0.803899 | CV_wMAE=0.054847
+[Iter 3] Running with seed=42
+21:26:14 - INFO - Starting training: lgb for Tc
+21:26:14 - INFO - Config: configs/best_lgb_Tc.json
+21:26:14 - INFO - Training data: datasets/train_orig_vanda1.csv
+21:26:14 - INFO - Test data: datasets/test_orig_vanda1.csv
+21:26:14 - INFO - Folds: 10, Seed: 42
+21:26:14 - INFO - Config loaded successfully
+21:26:14 - INFO - Starting CV: LGB for Tc
+21:26:14 - INFO - Current best model: Tc_lgb_0.0548 (CV wMAE: 0.0548)
+21:26:14 - INFO - Loading training data from: datasets/train_orig_vanda1.csv
+21:26:14 - INFO - Training data loaded: (10054, 1007)
+21:26:14 - INFO - Filtered training data: 10054 -> 857 samples with valid 'Tc' values
+21:26:14 - INFO - Loading test data from: datasets/test_orig_vanda1.csv
+21:26:14 - INFO - Test data loaded: (3, 1002)
+21:26:14 - INFO - Training data loaded:
+21:26:14 - INFO -   - Shape: X=(857, 1000), y=(857,)
+21:26:14 - INFO -   - Target 'Tc': 857 valid samples
+21:26:14 - INFO -   - Features: 1000
+21:26:14 - INFO -   - Feature types: {dtype('float64'): 991, dtype('int64'): 9}
+21:26:14 - INFO - Test data loaded: (3, 1000)
+21:26:14 - INFO - Training fold 1/10
+21:26:14 - INFO - Fold 1: wMAE=0.049631
+21:26:14 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold0.csv
+21:26:14 - INFO - Training fold 2/10
+21:26:15 - INFO - Fold 2: wMAE=0.046337
+21:26:15 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold1.csv
+21:26:15 - INFO - Training fold 3/10
+21:26:15 - INFO - Fold 3: wMAE=0.061089
+21:26:15 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold2.csv
+21:26:15 - INFO - Training fold 4/10
+21:26:15 - INFO - Fold 4: wMAE=0.044545
+21:26:15 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold3.csv
+21:26:15 - INFO - Training fold 5/10
+21:26:15 - INFO - Fold 5: wMAE=0.049168
+21:26:15 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold4.csv
+21:26:15 - INFO - Training fold 6/10
+21:26:16 - INFO - Fold 6: wMAE=0.058340
+21:26:16 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold5.csv
+21:26:16 - INFO - Training fold 7/10
+21:26:16 - INFO - Fold 7: wMAE=0.061693
+21:26:16 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold6.csv
+21:26:16 - INFO - Training fold 8/10
+21:26:16 - INFO - Fold 8: wMAE=0.057231
+21:26:16 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold7.csv
+21:26:16 - INFO - Training fold 9/10
+21:26:16 - INFO - Fold 9: wMAE=0.060560
+21:26:16 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold8.csv
+21:26:16 - INFO - Training fold 10/10
+21:26:16 - INFO - Fold 10: wMAE=0.060027
+21:26:16 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold9.csv
+21:26:16 - INFO - Models not saved - CV wMAE 0.0548 vs best 0.0548 (gap: +0.0000)
+21:26:16 - INFO - Current best model directory: outputs/models/Tc_lgb_0.0548
+21:26:16 - INFO - OOF predictions saved: outputs/oof/lgb_Tc.csv
+21:26:16 - INFO - Test predictions saved: outputs/preds/lgb_Tc.csv
+21:26:16 - INFO - Training completed successfully
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[265]	valid_0's l2: 0.00151916
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[207]	valid_0's l2: 0.000868515
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[120]	valid_0's l2: 0.00199639
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[73]	valid_0's l2: 0.000921577
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[219]	valid_0's l2: 0.0012187
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[595]	valid_0's l2: 0.00147723
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[194]	valid_0's l2: 0.00204383
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[88]	valid_0's l2: 0.00152083
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[259]	valid_0's l2: 0.00217798
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[84]	valid_0's l2: 0.00138321
+============================================================
+CV Summary: LGB - Tc
+============================================================
+Fold  1: MAE=0.023699 | RMSE=0.038976 | R²=0.7984
+Fold  2: MAE=0.022126 | RMSE=0.029471 | R²=0.9000
+Fold  3: MAE=0.029170 | RMSE=0.044681 | R²=0.7635
+Fold  4: MAE=0.021270 | RMSE=0.030357 | R²=0.8488
+Fold  5: MAE=0.023478 | RMSE=0.034910 | R²=0.8231
+Fold  6: MAE=0.027857 | RMSE=0.038435 | R²=0.7917
+Fold  7: MAE=0.029458 | RMSE=0.045209 | R²=0.7408
+Fold  8: MAE=0.027328 | RMSE=0.038998 | R²=0.7773
+Fold  9: MAE=0.028918 | RMSE=0.046669 | R²=0.7714
+Fold 10: MAE=0.028663 | RMSE=0.037192 | R²=0.8082
+
+CV MAE: 0.026197 ± 0.003024
+
+CV RMSE: 0.038490 ± 0.005593
+
+CV R2: 0.802327 ± 0.043767
+CV wMAE: 0.054847
+============================================================
+[RESULT] Target=Tc | Model=LGB | Folds=10 | CV_MAE=0.026189 | CV_RMSE=0.038886 | CV_R2=0.803899 | CV_wMAE=0.054847
+[Iter 4] Running with seed=42
+21:26:18 - INFO - Starting training: lgb for Tc
+21:26:18 - INFO - Config: configs/best_lgb_Tc.json
+21:26:18 - INFO - Training data: datasets/train_orig_vanda1.csv
+21:26:18 - INFO - Test data: datasets/test_orig_vanda1.csv
+21:26:18 - INFO - Folds: 10, Seed: 42
+21:26:18 - INFO - Config loaded successfully
+21:26:18 - INFO - Starting CV: LGB for Tc
+21:26:18 - INFO - Current best model: Tc_lgb_0.0548 (CV wMAE: 0.0548)
+21:26:18 - INFO - Loading training data from: datasets/train_orig_vanda1.csv
+21:26:19 - INFO - Training data loaded: (10054, 1007)
+21:26:19 - INFO - Filtered training data: 10054 -> 857 samples with valid 'Tc' values
+21:26:19 - INFO - Loading test data from: datasets/test_orig_vanda1.csv
+21:26:19 - INFO - Test data loaded: (3, 1002)
+21:26:19 - INFO - Training data loaded:
+21:26:19 - INFO -   - Shape: X=(857, 1000), y=(857,)
+21:26:19 - INFO -   - Target 'Tc': 857 valid samples
+21:26:19 - INFO -   - Features: 1000
+21:26:19 - INFO -   - Feature types: {dtype('float64'): 991, dtype('int64'): 9}
+21:26:19 - INFO - Test data loaded: (3, 1000)
+21:26:19 - INFO - Training fold 1/10
+21:26:19 - INFO - Fold 1: wMAE=0.049631
+21:26:19 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold0.csv
+21:26:19 - INFO - Training fold 2/10
+21:26:20 - INFO - Fold 2: wMAE=0.046337
+21:26:20 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold1.csv
+21:26:20 - INFO - Training fold 3/10
+21:26:20 - INFO - Fold 3: wMAE=0.061089
+21:26:20 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold2.csv
+21:26:20 - INFO - Training fold 4/10
+21:26:20 - INFO - Fold 4: wMAE=0.044545
+21:26:20 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold3.csv
+21:26:20 - INFO - Training fold 5/10
+21:26:20 - INFO - Fold 5: wMAE=0.049168
+21:26:20 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold4.csv
+21:26:20 - INFO - Training fold 6/10
+21:26:21 - INFO - Fold 6: wMAE=0.058340
+21:26:21 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold5.csv
+21:26:21 - INFO - Training fold 7/10
+21:26:21 - INFO - Fold 7: wMAE=0.061693
+21:26:21 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold6.csv
+21:26:21 - INFO - Training fold 8/10
+21:26:21 - INFO - Fold 8: wMAE=0.057231
+21:26:21 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold7.csv
+21:26:21 - INFO - Training fold 9/10
+21:26:21 - INFO - Fold 9: wMAE=0.060560
+21:26:21 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold8.csv
+21:26:21 - INFO - Training fold 10/10
+21:26:22 - INFO - Fold 10: wMAE=0.060027
+21:26:22 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold9.csv
+21:26:22 - INFO - Models not saved - CV wMAE 0.0548 vs best 0.0548 (gap: +0.0000)
+21:26:22 - INFO - Current best model directory: outputs/models/Tc_lgb_0.0548
+21:26:22 - INFO - OOF predictions saved: outputs/oof/lgb_Tc.csv
+21:26:22 - INFO - Test predictions saved: outputs/preds/lgb_Tc.csv
+21:26:22 - INFO - Training completed successfully
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[265]	valid_0's l2: 0.00151916
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[207]	valid_0's l2: 0.000868515
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[120]	valid_0's l2: 0.00199639
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[73]	valid_0's l2: 0.000921577
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[219]	valid_0's l2: 0.0012187
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[595]	valid_0's l2: 0.00147723
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[194]	valid_0's l2: 0.00204383
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[88]	valid_0's l2: 0.00152083
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[259]	valid_0's l2: 0.00217798
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[84]	valid_0's l2: 0.00138321
+============================================================
+CV Summary: LGB - Tc
+============================================================
+Fold  1: MAE=0.023699 | RMSE=0.038976 | R²=0.7984
+Fold  2: MAE=0.022126 | RMSE=0.029471 | R²=0.9000
+Fold  3: MAE=0.029170 | RMSE=0.044681 | R²=0.7635
+Fold  4: MAE=0.021270 | RMSE=0.030357 | R²=0.8488
+Fold  5: MAE=0.023478 | RMSE=0.034910 | R²=0.8231
+Fold  6: MAE=0.027857 | RMSE=0.038435 | R²=0.7917
+Fold  7: MAE=0.029458 | RMSE=0.045209 | R²=0.7408
+Fold  8: MAE=0.027328 | RMSE=0.038998 | R²=0.7773
+Fold  9: MAE=0.028918 | RMSE=0.046669 | R²=0.7714
+Fold 10: MAE=0.028663 | RMSE=0.037192 | R²=0.8082
+
+CV MAE: 0.026197 ± 0.003024
+
+CV RMSE: 0.038490 ± 0.005593
+
+CV R2: 0.802327 ± 0.043767
+CV wMAE: 0.054847
+============================================================
+[RESULT] Target=Tc | Model=LGB | Folds=10 | CV_MAE=0.026189 | CV_RMSE=0.038886 | CV_R2=0.803899 | CV_wMAE=0.054847
+[Iter 5] Running with seed=42
+21:26:23 - INFO - Starting training: lgb for Tc
+21:26:23 - INFO - Config: configs/best_lgb_Tc.json
+21:26:23 - INFO - Training data: datasets/train_orig_vanda1.csv
+21:26:23 - INFO - Test data: datasets/test_orig_vanda1.csv
+21:26:23 - INFO - Folds: 10, Seed: 42
+21:26:23 - INFO - Config loaded successfully
+21:26:23 - INFO - Starting CV: LGB for Tc
+21:26:23 - INFO - Current best model: Tc_lgb_0.0548 (CV wMAE: 0.0548)
+21:26:23 - INFO - Loading training data from: datasets/train_orig_vanda1.csv
+21:26:24 - INFO - Training data loaded: (10054, 1007)
+21:26:24 - INFO - Filtered training data: 10054 -> 857 samples with valid 'Tc' values
+21:26:24 - INFO - Loading test data from: datasets/test_orig_vanda1.csv
+21:26:24 - INFO - Test data loaded: (3, 1002)
+21:26:24 - INFO - Training data loaded:
+21:26:24 - INFO -   - Shape: X=(857, 1000), y=(857,)
+21:26:24 - INFO -   - Target 'Tc': 857 valid samples
+21:26:24 - INFO -   - Features: 1000
+21:26:24 - INFO -   - Feature types: {dtype('float64'): 991, dtype('int64'): 9}
+21:26:24 - INFO - Test data loaded: (3, 1000)
+21:26:24 - INFO - Training fold 1/10
+21:26:24 - INFO - Fold 1: wMAE=0.049631
+21:26:24 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold0.csv
+21:26:24 - INFO - Training fold 2/10
+21:26:25 - INFO - Fold 2: wMAE=0.046337
+21:26:25 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold1.csv
+21:26:25 - INFO - Training fold 3/10
+21:26:25 - INFO - Fold 3: wMAE=0.061089
+21:26:25 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold2.csv
+21:26:25 - INFO - Training fold 4/10
+21:26:25 - INFO - Fold 4: wMAE=0.044545
+21:26:25 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold3.csv
+21:26:25 - INFO - Training fold 5/10
+21:26:25 - INFO - Fold 5: wMAE=0.049168
+21:26:25 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold4.csv
+21:26:25 - INFO - Training fold 6/10
+21:26:26 - INFO - Fold 6: wMAE=0.058340
+21:26:26 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold5.csv
+21:26:26 - INFO - Training fold 7/10
+21:26:26 - INFO - Fold 7: wMAE=0.061693
+21:26:26 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold6.csv
+21:26:26 - INFO - Training fold 8/10
+21:26:26 - INFO - Fold 8: wMAE=0.057231
+21:26:26 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold7.csv
+21:26:26 - INFO - Training fold 9/10
+21:26:26 - INFO - Fold 9: wMAE=0.060560
+21:26:26 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold8.csv
+21:26:26 - INFO - Training fold 10/10
+21:26:27 - INFO - Fold 10: wMAE=0.060027
+21:26:27 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold9.csv
+21:26:27 - INFO - Models not saved - CV wMAE 0.0548 vs best 0.0548 (gap: +0.0000)
+21:26:27 - INFO - Current best model directory: outputs/models/Tc_lgb_0.0548
+21:26:27 - INFO - OOF predictions saved: outputs/oof/lgb_Tc.csv
+21:26:27 - INFO - Test predictions saved: outputs/preds/lgb_Tc.csv
+21:26:27 - INFO - Training completed successfully
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[265]	valid_0's l2: 0.00151916
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[207]	valid_0's l2: 0.000868515
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[120]	valid_0's l2: 0.00199639
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[73]	valid_0's l2: 0.000921577
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[219]	valid_0's l2: 0.0012187
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[595]	valid_0's l2: 0.00147723
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[194]	valid_0's l2: 0.00204383
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[88]	valid_0's l2: 0.00152083
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[259]	valid_0's l2: 0.00217798
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[84]	valid_0's l2: 0.00138321
+============================================================
+CV Summary: LGB - Tc
+============================================================
+Fold  1: MAE=0.023699 | RMSE=0.038976 | R²=0.7984
+Fold  2: MAE=0.022126 | RMSE=0.029471 | R²=0.9000
+Fold  3: MAE=0.029170 | RMSE=0.044681 | R²=0.7635
+Fold  4: MAE=0.021270 | RMSE=0.030357 | R²=0.8488
+Fold  5: MAE=0.023478 | RMSE=0.034910 | R²=0.8231
+Fold  6: MAE=0.027857 | RMSE=0.038435 | R²=0.7917
+Fold  7: MAE=0.029458 | RMSE=0.045209 | R²=0.7408
+Fold  8: MAE=0.027328 | RMSE=0.038998 | R²=0.7773
+Fold  9: MAE=0.028918 | RMSE=0.046669 | R²=0.7714
+Fold 10: MAE=0.028663 | RMSE=0.037192 | R²=0.8082
+
+CV MAE: 0.026197 ± 0.003024
+
+CV RMSE: 0.038490 ± 0.005593
+
+CV R2: 0.802327 ± 0.043767
+CV wMAE: 0.054847
+============================================================
+[RESULT] Target=Tc | Model=LGB | Folds=10 | CV_MAE=0.026189 | CV_RMSE=0.038886 | CV_R2=0.803899 | CV_wMAE=0.054847
+[Iter 6] Running with seed=42
+21:26:28 - INFO - Starting training: lgb for Tc
+21:26:28 - INFO - Config: configs/best_lgb_Tc.json
+21:26:28 - INFO - Training data: datasets/train_orig_vanda1.csv
+21:26:28 - INFO - Test data: datasets/test_orig_vanda1.csv
+21:26:28 - INFO - Folds: 10, Seed: 42
+21:26:28 - INFO - Config loaded successfully
+21:26:28 - INFO - Starting CV: LGB for Tc
+21:26:28 - INFO - Current best model: Tc_lgb_0.0548 (CV wMAE: 0.0548)
+21:26:28 - INFO - Loading training data from: datasets/train_orig_vanda1.csv
+21:26:29 - INFO - Training data loaded: (10054, 1007)
+21:26:29 - INFO - Filtered training data: 10054 -> 857 samples with valid 'Tc' values
+21:26:29 - INFO - Loading test data from: datasets/test_orig_vanda1.csv
+21:26:29 - INFO - Test data loaded: (3, 1002)
+21:26:29 - INFO - Training data loaded:
+21:26:29 - INFO -   - Shape: X=(857, 1000), y=(857,)
+21:26:29 - INFO -   - Target 'Tc': 857 valid samples
+21:26:29 - INFO -   - Features: 1000
+21:26:29 - INFO -   - Feature types: {dtype('float64'): 991, dtype('int64'): 9}
+21:26:29 - INFO - Test data loaded: (3, 1000)
+21:26:29 - INFO - Training fold 1/10
+21:26:29 - INFO - Fold 1: wMAE=0.049631
+21:26:29 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold0.csv
+21:26:29 - INFO - Training fold 2/10
+21:26:30 - INFO - Fold 2: wMAE=0.046337
+21:26:30 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold1.csv
+21:26:30 - INFO - Training fold 3/10
+21:26:30 - INFO - Fold 3: wMAE=0.061089
+21:26:30 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold2.csv
+21:26:30 - INFO - Training fold 4/10
+21:26:30 - INFO - Fold 4: wMAE=0.044545
+21:26:30 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold3.csv
+21:26:30 - INFO - Training fold 5/10
+21:26:30 - INFO - Fold 5: wMAE=0.049168
+21:26:30 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold4.csv
+21:26:30 - INFO - Training fold 6/10
+21:26:31 - INFO - Fold 6: wMAE=0.058340
+21:26:31 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold5.csv
+21:26:31 - INFO - Training fold 7/10
+21:26:31 - INFO - Fold 7: wMAE=0.061693
+21:26:31 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold6.csv
+21:26:31 - INFO - Training fold 8/10
+21:26:31 - INFO - Fold 8: wMAE=0.057231
+21:26:31 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold7.csv
+21:26:31 - INFO - Training fold 9/10
+21:26:31 - INFO - Fold 9: wMAE=0.060560
+21:26:31 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold8.csv
+21:26:31 - INFO - Training fold 10/10
+21:26:31 - INFO - Fold 10: wMAE=0.060027
+21:26:31 - INFO - Feature importance saved: outputs/importance/lgb_Tc_fold9.csv
+21:26:31 - INFO - Models not saved - CV wMAE 0.0548 vs best 0.0548 (gap: +0.0000)
+21:26:31 - INFO - Current best model directory: outputs/models/Tc_lgb_0.0548
+21:26:31 - INFO - OOF predictions saved: outputs/oof/lgb_Tc.csv
+21:26:31 - INFO - Test predictions saved: outputs/preds/lgb_Tc.csv
+21:26:31 - INFO - Training completed successfully
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[265]	valid_0's l2: 0.00151916
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[207]	valid_0's l2: 0.000868515
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[120]	valid_0's l2: 0.00199639
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[73]	valid_0's l2: 0.000921577
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[219]	valid_0's l2: 0.0012187
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[595]	valid_0's l2: 0.00147723
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[194]	valid_0's l2: 0.00204383
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[88]	valid_0's l2: 0.00152083
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[259]	valid_0's l2: 0.00217798
+Training until validation scores don't improve for 50 rounds
+Early stopping, best iteration is:
+[84]	valid_0's l2: 0.00138321
+============================================================
+CV Summary: LGB - Tc
+============================================================
+Fold  1: MAE=0.023699 | RMSE=0.038976 | R²=0.7984
+Fold  2: MAE=0.022126 | RMSE=0.029471 | R²=0.9000
+Fold  3: MAE=0.029170 | RMSE=0.044681 | R²=0.7635
+Fold  4: MAE=0.021270 | RMSE=0.030357 | R²=0.8488
+Fold  5: MAE=0.023478 | RMSE=0.034910 | R²=0.8231
+Fold  6: MAE=0.027857 | RMSE=0.038435 | R²=0.7917
+Fold  7: MAE=0.029458 | RMSE=0.045209 | R²=0.7408
+Fold  8: MAE=0.027328 | RMSE=0.038998 | R²=0.7773
+Fold  9: MAE=0.028918 | RMSE=0.046669 | R²=0.7714
+Fold 10: MAE=0.028663 | RMSE=0.037192 | R²=0.8082
+
+CV MAE: 0.026197 ± 0.003024
+
+CV RMSE: 0.038490 ± 0.005593
+
+CV R2: 0.802327 ± 0.043767
+CV wMAE: 0.054847
+============================================================
+[RESULT] Target=Tc | Model=LGB | Folds=10 | CV_MAE=0.026189 | CV_RMSE=0.038886 | CV_R2=0.803899 | CV_wMAE=0.054847
+[Iter 7] Running with seed=42
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+			Resource Usage on 2025-09-12 21:26:34.401537:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	JobId: 209747.stdct-mgmt-02
+	Project: personal-e1350261
+	Exit Status: 271
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	NCPUs: Requested(32), Used(32)
+	CPU Time Used: 00:08:11
+	Memory: Requested(222gb), Used(551848kb)
+	Vmem Used: 5253728kb
+	Walltime: Requested(12:00:00), Used(00:00:35)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	Execution Nodes Used: (CN-148[1]:ncpus=32:mem=232783872kb)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	No GPU-related information available for this job.

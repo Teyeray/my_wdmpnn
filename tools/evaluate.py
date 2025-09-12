@@ -113,22 +113,20 @@ def print_cv_summary(task: str, model: str, fold_metrics: List[dict],
 
 def get_default_ranges() -> Dict[str, float]:
     """获取默认的属性范围（从训练数据估计）"""
-    # 这些值需要根据实际训练数据调整
     return {
-        'Tg': 200.0,     # 玻璃化转变温度范围
-        'Tc': 300.0,     # 结晶温度范围  
-        'Rg': 50.0,      # 回转半径范围
-        'FFV': 0.3,      # 自由体积分数范围
-        'Density': 0.5   # 密度范围
+        'Tg': 691.400000,
+        'Tc': 0.477500,
+        'Rg': 20.308271,
+        'FFV': 0.336905,
+        'Density': 0.981950,
     }
-
 
 def get_default_counts() -> Dict[str, int]:
     """获取默认的样本数量（需要根据实际数据调整）"""
     return {
-        'Tg': 1000,
-        'Tc': 1000, 
-        'Rg': 1000,
-        'FFV': 1000,
-        'Density': 1000
+        'Tg': 1149,
+        'Tc': 857,
+        'Rg': 610,
+        'FFV': 7886,
+        'Density': 1238,
     }
