@@ -3,6 +3,7 @@
 支持 XGBoost / LightGBM / CatBoost 的交叉验证训练
 """
 import os
+import glob
 import argparse
 import warnings
 import pandas as pd
@@ -122,10 +123,141 @@ def load_data(target: str, logger, train_path: str, test_path: str = None):
     return X, y, X_test, test_ids, train_ids
 
 
+def save_best_model_if_improved(model, model_name: str, target: str, current_wmae: float, logger):
+    """只有比历史最佳wMAE更好时才保存模型，文件名包含指标值"""
+    
+    models_dir = f"outputs/models"
+    ensure_dir(models_dir)
+    
+    pattern = f"{models_dir}/{target}_{model_name}_best_*.bin"
+    existing_files = glob.glob(pattern)
+    
+    best_wmae = float('inf')
+    old_model_path = None
+    
+    # 从文件名中提取历史最佳wMAE
+    for file_path in existing_files:
+        try:
+            # 提取文件名中的wMAE值
+            filename = os.path.basename(file_path)
+            # 格式: {target}_{model}_best_{wmae}.bin
+            wmae_str = filename.split('_best_')[1].replace('.bin', '')
+            file_wmae = float(wmae_str)
+            
+            if file_wmae < best_wmae:
+                best_wmae = file_wmae
+                old_model_path = file_path
+                
+        except (ValueError, IndexError) as e:
+            logger.warning(f"Cannot parse wMAE from filename {file_path}: {e}")
+            continue
+    
+    # 检查是否需要保存新模型
+    if current_wmae < best_wmae:
+        # 构建新的文件路径
+        new_model_path = f"{models_dir}/{target}_{model_name}_best_{current_wmae:.6f}.bin"
+        
+        try:
+            # 保存新模型
+            if model_name == 'xgb':
+                model.save_model(new_model_path)
+            elif model_name == 'lgb':
+                model.booster_.save_model(new_model_path)
+            elif model_name == 'cat':
+                model.save_model(new_model_path)
+            
+            # 删除旧的最佳模型（如果存在）
+            if old_model_path and os.path.exists(old_model_path):
+                os.remove(old_model_path)
+                logger.info(f"Removed old best model: {old_model_path}")
+            
+            improvement = best_wmae - current_wmae
+            logger.info(f"🎉 New best model saved! wMAE improved by {improvement:.6f}")
+            logger.info(f"   Previous best: {best_wmae:.6f}")
+            logger.info(f"   Current best:  {current_wmae:.6f}")
+            logger.info(f"   Saved to: {new_model_path}")
+            
+            return True, new_model_path
+            
+        except Exception as e:
+            logger.error(f"Failed to save improved model: {e}")
+            return False, None
+    else:
+        gap = current_wmae - best_wmae
+        logger.info(f"Model not saved - wMAE {current_wmae:.6f} vs best {best_wmae:.6f} (gap: +{gap:.6f})")
+        if old_model_path:
+            logger.info(f"Current best model: {old_model_path}")
+        return False, old_model_path
+
+
+def get_best_model_path(target: str, model_name: str):
+    """获取当前最佳模型路径和分数"""
+    models_dir = f"outputs/models"
+    pattern = f"{models_dir}/{target}_{model_name}_best_*.bin"
+    existing_files = glob.glob(pattern)
+    
+    if not existing_files:
+        return None, float('inf')
+    
+    best_wmae = float('inf')
+    best_path = None
+    
+    for file_path in existing_files:
+        try:
+            filename = os.path.basename(file_path)
+            wmae_str = filename.split('_best_')[1].replace('.bin', '')
+            file_wmae = float(wmae_str)
+            
+            if file_wmae < best_wmae:
+                best_wmae = file_wmae
+                best_path = file_path
+                
+        except (ValueError, IndexError):
+            continue
+    
+    return best_path, best_wmae
+
+def save_feature_importance(model, model_name: str, target: str, fold: int, logger):
+    """保存特征重要性"""
+    try:
+        if model_name == 'xgb':
+            imp = model.get_booster().get_score(importance_type="gain")
+            df_imp = pd.DataFrame(list(imp.items()), columns=["feature", "importance"])
+        elif model_name == 'lgb':
+            imp = model.booster_.feature_importance(importance_type="gain")
+            df_imp = pd.DataFrame({
+                "feature": model.booster_.feature_name(),
+                "importance": imp
+            })
+        elif model_name == 'cat':
+            imp = model.get_feature_importance()
+            df_imp = pd.DataFrame({
+                "feature": model.feature_names_,
+                "importance": imp
+            })
+        else:
+            logger.warning(f"Feature importance not supported for {model_name}")
+            return
+
+        imp_path = f"outputs/importance/{model_name}_{target}_fold{fold}.csv"
+        ensure_dir(os.path.dirname(imp_path))
+        df_imp.to_csv(imp_path, index=False)
+        logger.info(f"Feature importance saved: {imp_path}")
+        
+    except Exception as e:
+        logger.warning(f"Failed to save feature importance: {e}")
+
 def run_cv(model_name: str, target: str, config: dict, n_folds: int, seed: int, logger,
            train_path: str, test_path: str = None):
     """执行交叉验证训练"""
     logger.info(f"Starting CV: {model_name.upper()} for {target}")
+    
+    # 显示当前最佳记录
+    current_best_path, current_best_wmae = get_best_model_path(target, model_name)
+    if current_best_path:
+        logger.info(f"Current best model: {os.path.basename(current_best_path)} (wMAE: {current_best_wmae:.6f})")
+    else:
+        logger.info("No previous best model found")
     
     # 加载数据
     X, y, X_test, test_ids, train_ids = load_data(target, logger, train_path, test_path)
@@ -140,6 +272,11 @@ def run_cv(model_name: str, target: str, config: dict, n_folds: int, seed: int, 
     fold_metrics = []
     oof_predictions = np.zeros(len(y))
     test_predictions = []
+    
+    # 跟踪最佳fold模型
+    best_fold_score = float('inf')
+    best_fold_model = None
+    best_fold_idx = -1
     
     # wMAE计算所需参数
     ranges = get_default_ranges()
@@ -156,26 +293,22 @@ def run_cv(model_name: str, target: str, config: dict, n_folds: int, seed: int, 
         
         # 根据不同模型使用不同的训练方式
         if model_name == 'xgb':
-            # XGBoost 训练
             model.fit(
                 X_train, y_train,
                 eval_set=[(X_val, y_val)],
-                #early_stopping_rounds=fit_params.get('early_stopping_rounds', 100),
                 verbose=False
             )
         elif model_name == 'lgb':
-            # LightGBM 训练
             import lightgbm as lgb
             model.fit(
                 X_train, y_train,
                 eval_set=[(X_val, y_val)],
                 callbacks=[
                     lgb.early_stopping(fit_params.get('early_stopping_rounds', 100)),
-                    lgb.log_evaluation(0)  # 关闭训练日志
+                    lgb.log_evaluation(0)
                 ]
             )
         elif model_name == 'cat':
-            # CatBoost 训练
             model.fit(
                 X_train, y_train,
                 eval_set=[(X_val, y_val)],
@@ -189,53 +322,32 @@ def run_cv(model_name: str, target: str, config: dict, n_folds: int, seed: int, 
         
         # 计算fold指标
         fold_metric = regression_metrics(y_val, val_pred)
+        fold_wmae = compute_single_wmae(y_val, val_pred, target, ranges, counts)
         fold_metrics.append(fold_metric)
         
-        logger.info(f"Fold {fold + 1}: MAE={fold_metric['mae']:.6f}")
+        # 检查是否是最佳fold
+        if fold_wmae < best_fold_score:
+            best_fold_score = fold_wmae
+            best_fold_model = model
+            best_fold_idx = fold
+            logger.info(f"Fold {fold + 1}: New best wMAE={fold_wmae:.6f}")
+        else:
+            logger.info(f"Fold {fold + 1}: wMAE={fold_wmae:.6f}")
         
         # 测试集预测
         if X_test is not None:
             test_pred = model.predict(X_test)
             test_predictions.append(test_pred)
         
-        # 可选：保存模型
-        model_path = f"outputs/models/{model_name}_{target}_fold{fold}.bin"
-        ensure_dir(os.path.dirname(model_path))
-        try:
-            if model_name == 'xgb':
-                model.save_model(model_path)
-            elif model_name == 'lgb':
-                model.booster_.save_model(model_path)
-            elif model_name == 'cat':
-                model.save_model(model_path)
-        except Exception as e:
-            logger.warning(f"Failed to save model: {e}")
         # 保存特征重要性
-        
-        if model_name == 'xgb':
-            imp = model.get_booster().get_score(importance_type="gain")
-            df_imp = pd.DataFrame(list(imp.items()), columns=["feature", "importance"])
-        elif model_name == 'lgb':
-            imp = model.booster_.feature_importance(importance_type="gain")
-            df_imp = pd.DataFrame({
-                "feature": model.booster_.feature_name(),
-                "importance": imp
-            })
-        elif model_name == 'cat':
-            imp = model.get_feature_importance()
-            df_imp = pd.DataFrame({
-                "feature": model.feature_names_,
-                "importance": imp
-            })
-
-        imp_path = f"outputs/importance/{model_name}_{target}_fold{fold}.csv"
-        ensure_dir(os.path.dirname(imp_path))
-        df_imp.to_csv(imp_path, index=False)
-        logger.info(f"Feature importance saved: {imp_path}")
+        save_feature_importance(model, model_name, target, fold, logger)
     
     # 计算CV指标
     cv_metrics = regression_metrics(y, oof_predictions)
     cv_wmae = compute_single_wmae(y, oof_predictions, target, ranges, counts)
+    
+    # 尝试保存最佳模型
+    saved, model_path = save_best_model_if_improved(best_fold_model, model_name, target, cv_wmae, logger)
     
     # 打印汇总
     print_cv_summary(target, model_name, fold_metrics, cv_wmae)
@@ -253,7 +365,9 @@ def run_cv(model_name: str, target: str, config: dict, n_folds: int, seed: int, 
         'test_ids': test_ids,
         'cv_metrics': cv_metrics,
         'cv_wmae': cv_wmae,
-        'fold_metrics': fold_metrics
+        'fold_metrics': fold_metrics,
+        'model_saved': saved,
+        'model_path': model_path
     }
 
 

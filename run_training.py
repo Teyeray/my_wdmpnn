@@ -10,8 +10,6 @@ folds = 5
 
 for model in MODELS:
     for target in PROPERTIES:
-        if model == "xgb" and target == "Tg":
-            continue
 
         config = f"configs/{model}_base.json"
         cmd = [
