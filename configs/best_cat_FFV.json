@@ -1,14 +1,14 @@
 {
   "params": {
-    "iterations": 1855,
-    "depth": 6,
-    "learning_rate": 0.0542886111737482,
-    "subsample": 0.8107421429486626,
-    "colsample_bylevel": 0.6483036989798634,
-    "reg_lambda": 4,
-    "min_child_samples": 12,
-    "random_strength": 8,
-    "bagging_temperature": 1
+    "iterations": 1055,
+    "depth": 4,
+    "learning_rate": 0.2357781564215944,
+    "subsample": 0.7853817017702827,
+    "colsample_bylevel": 0.9302274970125556,
+    "reg_lambda": 2,
+    "min_child_samples": 13,
+    "random_strength": 6,
+    "bagging_temperature": 0
   },
   "fit": {
     "early_stopping_rounds": 50,

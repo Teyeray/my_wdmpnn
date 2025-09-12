@@ -970,15 +970,15 @@ if __name__ == "__main__":
     PROPERTIES = ["Tg", "FFV", "Tc", "Rg", "Density"]
     columns = None
     
-    with open("complete_columns.json", "r", encoding="utf-8") as f:
-        columns = json.load(f)
+    # with open("complete_columns.json", "r", encoding="utf-8") as f:
+    #     columns = json.load(f)
 
     train, test = process_train_test_data(
         use_mordred=True,
         use_rdkit=True,
         save_files=True,
         columns=columns,
-        save_tail="testing1",
+        save_tail="vanda1",
     )
 
     save_columns_to_json(train, name="used_columns")
