@@ -7,15 +7,10 @@ import numpy as np
 import os, re, json
 import pandas as pd
 from rdkit import Chem
-from torch import Tensor
 from pathlib import Path
 from collections import Counter
 from rich.progress import Progress
-from torch.utils.data import Dataset
-from torch_geometric.data import Data
-from torch_geometric.loader import DataLoader
 from rdkit.ML.Descriptors import MoleculeDescriptors
-from sklearn.model_selection import train_test_split
 from rdkit.Chem import Descriptors, rdMolDescriptors, AllChem
 from rdkit.Chem.rdMolDescriptors import CalcNumRotatableBonds
 from typing import List, Tuple, Optional, Dict, Union, Iterable
@@ -809,12 +804,8 @@ def process_train_test_data(
     Returns:
         处理后的训练集和测试集
     """
-    if save_files:
-                # 防止覆盖已存在文件
-        if os.path.exists(train_path) or os.path.exists(test_path):
-            raise FileExistsError(
-                f"Target files already exist: {train_path} or {test_path}. Choose a different save_tail."
-            )
+
+
     train_df, test_df, sub = get_train_test()
     train, test = train_df.copy(), test_df.copy()
     logger.info(
@@ -925,17 +916,23 @@ def process_train_test_data(
         if base.lower().endswith(".csv"):
             base = base[:-4]
 
-        path = "datasets/"
-        os.makedirs(path, exist_ok=True)
+        path_d = "datasets/"
+        os.makedirs(path_d, exist_ok=True)
 
-        train_path = os.path.join(path, f"train_orig_{base}.csv")
-        test_path = os.path.join(path, f"test_orig_{base}.csv")
+        train_path = os.path.join(path_d, f"train_orig_{base}.csv")
+        test_path = os.path.join(path_d, f"test_orig_{base}.csv")
+
+        # 防止覆盖已存在文件
+        if os.path.exists(train_path) or os.path.exists(test_path):
+            raise FileExistsError(
+                f"Target files already exist: {train_path} or {test_path}. Choose a different save_tail."
+            )
 
         train.to_csv(train_path, index=False)
         test.to_csv(test_path, index=False)
         logger.info(f"Cleaned data saved to:\n  {train_path}\n  {test_path}")
         logger.info(
-            f'[FINISH] Completed, data saved in "{path}" directory as "{base}_train.csv" and "{base}_test.csv"'
+            f'[FINISH] Completed, data saved in "{path_d}" directory as "{base}_train.csv" and "{base}_test.csv"'
         )
 
     print_feature_statistics(train)
