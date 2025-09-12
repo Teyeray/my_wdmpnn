@@ -782,6 +782,61 @@ def print_feature_statistics(
     logger.info("=" * 30)
     return
 
+def fix_nan_ids(df: pd.DataFrame, id_col: str = "id", start_id: int = None, use_negative: bool = False) -> pd.DataFrame:
+    """
+    修复DataFrame中的NaN ID值
+    
+    Args:
+        df: 输入DataFrame
+        id_col: ID列名
+        start_id: 起始ID值，如果为None则自动计算
+        use_negative: 是否使用负数ID（用于测试集避免冲突）
+    
+    Returns:
+        修复后的DataFrame
+    """
+    if id_col not in df.columns:
+        logger.warning(f"Column '{id_col}' not found in DataFrame")
+        return df
+    
+    df = df.copy()
+    nan_count = df[id_col].isna().sum()
+    
+    if nan_count == 0:
+        logger.info(f"No NaN values found in '{id_col}' column")
+        return df
+    
+    logger.info(f"Found {nan_count} NaN values in '{id_col}' column, filling with generated IDs")
+    
+    # 确定起始ID
+    if start_id is None:
+        max_id = df[id_col].max()
+        if pd.isna(max_id):  # 如果所有ID都是NaN
+            start_id = 1000000 if not use_negative else -1000000
+            logger.warning(f"All IDs are NaN, starting from {start_id}")
+        else:
+            start_id = max_id + 1 if not use_negative else min(-1, int(max_id) - nan_count)
+    
+    # 生成新ID
+    if use_negative:
+        new_ids = np.arange(start_id, start_id - nan_count, -1)
+    else:
+        new_ids = np.arange(start_id, start_id + nan_count)
+    
+    # 填充NaN ID
+    nan_mask = df[id_col].isna()
+    df.loc[nan_mask, id_col] = new_ids
+    
+    logger.info(f"Filled {nan_count} NaN IDs with range: {new_ids[0]} to {new_ids[-1]}")
+    
+    # 验证没有NaN ID剩余
+    remaining_nan = df[id_col].isna().sum()
+    if remaining_nan > 0:
+        logger.error(f"Still have {remaining_nan} NaN IDs after filling!")
+    else:
+        logger.info(f"✅ Successfully filled all NaN IDs in '{id_col}' column")
+    
+    return df
 
 def process_train_test_data(
     save_files: bool = False,
@@ -888,6 +943,13 @@ def process_train_test_data(
     # 对齐测试集特征与训练集
     test = align_test_features_with_train(test, train, target_cols=target)
 
+    # 🔧 在特征处理完成后，最后处理NaN ID问题
+    logger.info("=" * 60)
+    logger.info("Final step: Processing NaN IDs...")
+    train = fix_nan_ids(train, id_col="id", use_negative=False)
+    test = fix_nan_ids(test, id_col="id", use_negative=True)  # 测试集用负数避免冲突
+    logger.info("=" * 60)
+
     # 验证特征一致性
     train_features = [col for col in train.columns if col not in target + ["id"]]
     test_features = [col for col in test.columns if col not in ["id"]]
@@ -905,8 +967,19 @@ def process_train_test_data(
         if test_only:
             logger.error(f"  Features only in test: {list(test_only)[:10]}...")
 
+    # 🔧 保存前最后验证ID完整性
     if save_files:
-        # 要求调用者提供非空 save_tail；函数内部校验并防止覆盖已有文件
+        logger.info("Final ID validation before saving...")
+        train_nan_ids = train['id'].isna().sum() if 'id' in train.columns else 0
+        test_nan_ids = test['id'].isna().sum() if 'id' in test.columns else 0
+        
+        if train_nan_ids > 0 or test_nan_ids > 0:
+            logger.error(f"❌ Found NaN IDs before saving! Train: {train_nan_ids}, Test: {test_nan_ids}")
+            raise ValueError("NaN IDs found before saving - this should not happen after fix_nan_ids")
+        else:
+            logger.info("✅ All IDs are valid before saving")
+
+        # ...existing save logic...
         if not save_tail or not str(save_tail).strip():
             raise ValueError(
                 "save_files=True requires a non-empty save_tail (base filename)."
@@ -922,7 +995,6 @@ def process_train_test_data(
         train_path = os.path.join(path_d, f"train_orig_{base}.csv")
         test_path = os.path.join(path_d, f"test_orig_{base}.csv")
 
-        # 防止覆盖已存在文件
         if os.path.exists(train_path) or os.path.exists(test_path):
             raise FileExistsError(
                 f"Target files already exist: {train_path} or {test_path}. Choose a different save_tail."
@@ -978,7 +1050,7 @@ if __name__ == "__main__":
         use_rdkit=True,
         save_files=True,
         columns=columns,
-        save_tail="vanda1",
+        save_tail="vanda2",
     )
 
     save_columns_to_json(train, name="used_columns")

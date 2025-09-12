@@ -1,3 +1,5 @@
+logs/*
+script/*
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -12,7 +14,7 @@ kaggle/working/qm9/*
 *.so
 catboost_info/*
 outputs/*
-!outputs/models/
+#!outputs/models/
 test_data.ipynb
 optuna_qm9_pretrain.db
 checkpoints/*
@@ -191,7 +193,6 @@ cython_debug/
 # Ignore directories containing user credentials, local state, and settings.
 # Learn more at https://abstra.io/docs
 .abstra/
-
 # Visual Studio Code
 #  Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore 
 #  that can be found at https://github.com/github/gitignore/blob/main/Global/VisualStudioCode.gitignore
