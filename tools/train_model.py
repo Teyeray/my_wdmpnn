@@ -4,6 +4,7 @@
 """
 import os
 import glob
+import shutil
 import argparse
 import warnings
 import pandas as pd
@@ -123,129 +124,123 @@ def load_data(target: str, logger, train_path: str, test_path: str = None):
     return X, y, X_test, test_ids, train_ids
 
 
-def save_best_model_if_improved(model, model_name: str, target: str, current_wmae: float, logger):
-    """只有比历史最佳wMAE更好时才保存模型，文件名包含指标值"""
+def save_models_if_improved(fold_models: list, model_name: str, target: str, 
+                           current_cv_wmae: float, logger, min_improvement: float = 1e-4):
+    """只有CV wMAE改进时才保存所有fold模型"""
     
-    models_dir = f"outputs/models"
-    ensure_dir(models_dir)
+    models_base_dir = "outputs/models"
+    ensure_dir(models_base_dir)
     
-    pattern = f"{models_dir}/{target}_{model_name}_best_*.bin"
-    existing_files = glob.glob(pattern)
+    # 1. 查找现有最佳模型目录
+    pattern = f"{models_base_dir}/{model_name}_*"
+    existing_dirs = glob.glob(pattern)
     
-    best_wmae = float('inf')
-    old_model_path = None
+    best_cv_wmae = float('inf')
+    old_model_dir = None
     
-    # 从文件名中提取历史最佳wMAE
-    for file_path in existing_files:
-        try:
-            # 提取文件名中的wMAE值
-            filename = os.path.basename(file_path)
-            # 格式: {target}_{model}_best_{wmae}.bin
-            wmae_str = filename.split('_best_')[1].replace('.bin', '')
-            file_wmae = float(wmae_str)
-            
-            if file_wmae < best_wmae:
-                best_wmae = file_wmae
-                old_model_path = file_path
+    # 从目录名中提取历史最佳CV wMAE
+    for dir_path in existing_dirs:
+        if os.path.isdir(dir_path):
+            try:
+                dir_name = os.path.basename(dir_path)
+                wmae_str = dir_name.split('_', 1)[1]
+                dir_wmae = float(wmae_str)
                 
-        except (ValueError, IndexError) as e:
-            logger.warning(f"Cannot parse wMAE from filename {file_path}: {e}")
-            continue
+                if dir_wmae < best_cv_wmae:
+                    best_cv_wmae = dir_wmae
+                    old_model_dir = dir_path
+                    
+            except (ValueError, IndexError) as e:
+                logger.warning(f"Cannot parse CV wMAE from dirname {dir_path}: {e}")
+                continue
     
-    # 检查是否需要保存新模型
-    if current_wmae < best_wmae:
-        # 构建新的文件路径
-        new_model_path = f"{models_dir}/{target}_{model_name}_best_{current_wmae:.6f}.bin"
+    # 2. 检查是否需要保存新模型
+    improvement = best_cv_wmae - current_cv_wmae
+    if improvement > min_improvement:
+        # 构建新的模型目录路径
+        new_model_dir = f"{models_base_dir}/{model_name}_{current_cv_wmae:.4f}"
         
         try:
-            # 保存新模型
-            if model_name == 'xgb':
-                model.save_model(new_model_path)
-            elif model_name == 'lgb':
-                model.booster_.save_model(new_model_path)
-            elif model_name == 'cat':
-                model.save_model(new_model_path)
+            # 创建新目录
+            ensure_dir(new_model_dir)
             
-            # 删除旧的最佳模型（如果存在）
-            if old_model_path and os.path.exists(old_model_path):
-                os.remove(old_model_path)
-                logger.info(f"Removed old best model: {old_model_path}")
+            total_size = 0
             
-            improvement = best_wmae - current_wmae
-            logger.info(f"🎉 New best model saved! wMAE improved by {improvement:.6f}")
-            logger.info(f"   Previous best: {best_wmae:.6f}")
-            logger.info(f"   Current best:  {current_wmae:.6f}")
-            logger.info(f"   Saved to: {new_model_path}")
+            # 保存所有fold模型
+            for i, fold_model in enumerate(fold_models):
+                fold_path = f"{new_model_dir}/{target}_{model_name}_fold{i}.bin"
+                
+                if model_name == 'xgb':
+                    fold_model.save_model(fold_path)
+                elif model_name == 'lgb':
+                    fold_model.booster_.save_model(fold_path)
+                elif model_name == 'cat':
+                    fold_model.save_model(fold_path)
+                
+                if os.path.exists(fold_path):
+                    file_size = os.path.getsize(fold_path)
+                    total_size += file_size
+                else:
+                    logger.error(f"Failed to save fold {i} model: {fold_path}")
+                    return False, None
             
-            return True, new_model_path
+            # 删除旧的最佳模型目录
+            if old_model_dir and os.path.exists(old_model_dir):
+                shutil.rmtree(old_model_dir)
+                logger.info(f"Removed old best model directory: {old_model_dir}")
+            
+            logger.info(f"🎉 New best models saved! CV wMAE improved by {improvement:.4f}")
+            logger.info(f"   Previous best: {best_cv_wmae:.4f}")
+            logger.info(f"   Current best:  {current_cv_wmae:.4f}")
+            logger.info(f"   Saved to: {new_model_dir}")
+            logger.info(f"   Files: {len(fold_models)} fold models")
+            logger.info(f"   Total size: {total_size:,} bytes")
+            
+            return True, new_model_dir
             
         except Exception as e:
-            logger.error(f"Failed to save improved model: {e}")
+            logger.error(f"Failed to save improved models: {e}")
+            if os.path.exists(new_model_dir):
+                shutil.rmtree(new_model_dir)
             return False, None
     else:
-        gap = current_wmae - best_wmae
-        logger.info(f"Model not saved - wMAE {current_wmae:.6f} vs best {best_wmae:.6f} (gap: +{gap:.6f})")
-        if old_model_path:
-            logger.info(f"Current best model: {old_model_path}")
-        return False, old_model_path
+        if improvement <= 0:
+            gap = current_cv_wmae - best_cv_wmae
+            logger.info(f"Models not saved - CV wMAE {current_cv_wmae:.4f} vs best {best_cv_wmae:.4f} (gap: +{gap:.4f})")
+        else:
+            logger.info(f"Models not saved - improvement {improvement:.4f} below threshold {min_improvement:.4f}")
+        if old_model_dir:
+            logger.info(f"Current best model directory: {old_model_dir}")
+        return False, old_model_dir
 
 
-def get_best_model_path(target: str, model_name: str):
-    """获取当前最佳模型路径和分数"""
-    models_dir = f"outputs/models"
-    pattern = f"{models_dir}/{target}_{model_name}_best_*.bin"
-    existing_files = glob.glob(pattern)
+def get_best_model_info(model_name: str):
+    """获取当前最佳模型目录和CV wMAE"""
+    models_base_dir = "outputs/models"
+    pattern = f"{models_base_dir}/{model_name}_*"
+    existing_dirs = glob.glob(pattern)
     
-    if not existing_files:
+    if not existing_dirs:
         return None, float('inf')
     
-    best_wmae = float('inf')
-    best_path = None
+    best_cv_wmae = float('inf')
+    best_dir = None
     
-    for file_path in existing_files:
-        try:
-            filename = os.path.basename(file_path)
-            wmae_str = filename.split('_best_')[1].replace('.bin', '')
-            file_wmae = float(wmae_str)
-            
-            if file_wmae < best_wmae:
-                best_wmae = file_wmae
-                best_path = file_path
+    for dir_path in existing_dirs:
+        if os.path.isdir(dir_path):
+            try:
+                dir_name = os.path.basename(dir_path)
+                wmae_str = dir_name.split('_', 1)[1]
+                dir_wmae = float(wmae_str)
                 
-        except (ValueError, IndexError):
-            continue
+                if dir_wmae < best_cv_wmae:
+                    best_cv_wmae = dir_wmae
+                    best_dir = dir_path
+                    
+            except (ValueError, IndexError):
+                continue
     
-    return best_path, best_wmae
-
-def save_feature_importance(model, model_name: str, target: str, fold: int, logger):
-    """保存特征重要性"""
-    try:
-        if model_name == 'xgb':
-            imp = model.get_booster().get_score(importance_type="gain")
-            df_imp = pd.DataFrame(list(imp.items()), columns=["feature", "importance"])
-        elif model_name == 'lgb':
-            imp = model.booster_.feature_importance(importance_type="gain")
-            df_imp = pd.DataFrame({
-                "feature": model.booster_.feature_name(),
-                "importance": imp
-            })
-        elif model_name == 'cat':
-            imp = model.get_feature_importance()
-            df_imp = pd.DataFrame({
-                "feature": model.feature_names_,
-                "importance": imp
-            })
-        else:
-            logger.warning(f"Feature importance not supported for {model_name}")
-            return
-
-        imp_path = f"outputs/importance/{model_name}_{target}_fold{fold}.csv"
-        ensure_dir(os.path.dirname(imp_path))
-        df_imp.to_csv(imp_path, index=False)
-        logger.info(f"Feature importance saved: {imp_path}")
-        
-    except Exception as e:
-        logger.warning(f"Failed to save feature importance: {e}")
+    return best_dir, best_cv_wmae
 
 def run_cv(model_name: str, target: str, config: dict, n_folds: int, seed: int, logger,
            train_path: str, test_path: str = None):
@@ -253,9 +248,9 @@ def run_cv(model_name: str, target: str, config: dict, n_folds: int, seed: int, 
     logger.info(f"Starting CV: {model_name.upper()} for {target}")
     
     # 显示当前最佳记录
-    current_best_path, current_best_wmae = get_best_model_path(target, model_name)
-    if current_best_path:
-        logger.info(f"Current best model: {os.path.basename(current_best_path)} (wMAE: {current_best_wmae:.6f})")
+    current_best_dir, current_best_wmae = get_best_model_info(model_name)
+    if current_best_dir:
+        logger.info(f"Current best model: {os.path.basename(current_best_dir)} (CV wMAE: {current_best_wmae:.4f})")
     else:
         logger.info("No previous best model found")
     
@@ -272,11 +267,7 @@ def run_cv(model_name: str, target: str, config: dict, n_folds: int, seed: int, 
     fold_metrics = []
     oof_predictions = np.zeros(len(y))
     test_predictions = []
-    
-    # 跟踪最佳fold模型
-    best_fold_score = float('inf')
-    best_fold_model = None
-    best_fold_idx = -1
+    fold_models = []  # 保存所有fold模型
     
     # wMAE计算所需参数
     ranges = get_default_ranges()
@@ -316,6 +307,9 @@ def run_cv(model_name: str, target: str, config: dict, n_folds: int, seed: int, 
                 verbose=False
             )
         
+        # 保存fold模型
+        fold_models.append(model)
+        
         # 验证集预测
         val_pred = model.predict(X_val)
         oof_predictions[val_idx] = val_pred
@@ -325,14 +319,7 @@ def run_cv(model_name: str, target: str, config: dict, n_folds: int, seed: int, 
         fold_wmae = compute_single_wmae(y_val, val_pred, target, ranges, counts)
         fold_metrics.append(fold_metric)
         
-        # 检查是否是最佳fold
-        if fold_wmae < best_fold_score:
-            best_fold_score = fold_wmae
-            best_fold_model = model
-            best_fold_idx = fold
-            logger.info(f"Fold {fold + 1}: New best wMAE={fold_wmae:.6f}")
-        else:
-            logger.info(f"Fold {fold + 1}: wMAE={fold_wmae:.6f}")
+        logger.info(f"Fold {fold + 1}: wMAE={fold_wmae:.6f}")
         
         # 测试集预测
         if X_test is not None:
@@ -342,17 +329,18 @@ def run_cv(model_name: str, target: str, config: dict, n_folds: int, seed: int, 
         # 保存特征重要性
         save_feature_importance(model, model_name, target, fold, logger)
     
+
     # 计算CV指标
     cv_metrics = regression_metrics(y, oof_predictions)
     cv_wmae = compute_single_wmae(y, oof_predictions, target, ranges, counts)
     
-    # 尝试保存最佳模型
-    saved, model_path = save_best_model_if_improved(best_fold_model, model_name, target, cv_wmae, logger)
+    # 保存fold模型（如果改进）
+    saved, model_dir = save_models_if_improved(fold_models, model_name, target, cv_wmae, logger)
     
     # 打印汇总
     print_cv_summary(target, model_name, fold_metrics, cv_wmae)
     
-    # 平均测试集预测
+    # 使用fold平均预测（而不是全量模型）
     if test_predictions:
         final_test_pred = np.mean(test_predictions, axis=0)
     else:
@@ -366,8 +354,9 @@ def run_cv(model_name: str, target: str, config: dict, n_folds: int, seed: int, 
         'cv_metrics': cv_metrics,
         'cv_wmae': cv_wmae,
         'fold_metrics': fold_metrics,
-        'model_saved': saved,
-        'model_path': model_path
+        'models_saved': saved,
+        'model_dir': model_dir,
+        'fold_models': fold_models
     }
 
 

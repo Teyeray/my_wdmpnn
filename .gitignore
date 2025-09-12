@@ -12,6 +12,7 @@ kaggle/working/qm9/*
 *.so
 catboost_info/*
 outputs/*
+!outputs/models/
 test_data.ipynb
 optuna_qm9_pretrain.db
 checkpoints/*
