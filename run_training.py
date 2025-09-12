@@ -11,7 +11,6 @@ folds = 10
 for _ in range(20):
     for model in MODELS:
         for target in PROPERTIES:
-
             config = f"configs/best_{model}_{target}.json"
             cmd = [
                 "python", "-m", "tools.train_model",
