@@ -1,0 +1,17 @@
+{
+  "params": {
+    "iterations": 535,
+    "depth": 7,
+    "learning_rate": 0.047893435701411406,
+    "subsample": 0.7744317956481153,
+    "colsample_bylevel": 0.8046692240442382,
+    "reg_lambda": 3,
+    "min_child_samples": 20,
+    "random_strength": 0,
+    "bagging_temperature": 1
+  },
+  "fit": {
+    "early_stopping_rounds": 50,
+    "verbose": false
+  }
+}

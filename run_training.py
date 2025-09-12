@@ -6,20 +6,21 @@ MODELS = ["xgb", "lgb", "cat"]
 
 train_path = "datasets/train_orig_testing1.csv"
 test_path = "datasets/test_orig_testing1.csv"
-folds = 5
+folds = 10
 
-for model in MODELS:
-    for target in PROPERTIES:
+for _ in range(20):
+    for model in MODELS:
+        for target in PROPERTIES:
 
-        config = f"configs/{model}_base.json"
-        cmd = [
-            "python", "-m", "tools.train_model",
-            "--model", model,
-            "--target", target,
-            "--config", config,
-            "--train-path", train_path,
-            "--test-path", test_path,
-            "--folds", str(folds)
-        ]
-        print(">>> Running:", " ".join(cmd))
-        subprocess.run(cmd, check=True)
+            config = f"configs/best_{model}_{target}.json"
+            cmd = [
+                "python", "-m", "tools.train_model",
+                "--model", model,
+                "--target", target,
+                "--config", config,
+                "--train-path", train_path,
+                "--test-path", test_path,
+                "--folds", str(folds)
+            ]
+            print(">>> Running:", " ".join(cmd))
+            subprocess.run(cmd, check=True)

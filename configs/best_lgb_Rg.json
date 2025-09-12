@@ -1,0 +1,18 @@
+{
+  "params": {
+    "n_estimators": 2870,
+    "max_depth": 5,
+    "learning_rate": 0.06928472143973059,
+    "subsample": 0.9648674556877842,
+    "colsample_bytree": 0.6280028422274512,
+    "reg_alpha": 0,
+    "reg_lambda": 8,
+    "min_child_samples": 15,
+    "min_child_weight": 0.0969368902897723,
+    "num_leaves": 238
+  },
+  "fit": {
+    "early_stopping_rounds": 50,
+    "verbose": false
+  }
+}
