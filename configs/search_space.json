@@ -1,6 +1,6 @@
 {
   "xgb": {
-    "n_estimators": [100, 2000],
+    "n_estimators": [500, 10000],
     "max_depth": [3, 10],
     "learning_rate": [0.01, 0.3],
     "subsample": [0.6, 1.0],
@@ -11,7 +11,7 @@
     "gamma": [0, 5]
   },
   "lgb": {
-    "n_estimators": [100, 2000],
+    "n_estimators": [500, 10000],
     "max_depth": [3, 10],
     "learning_rate": [0.01, 0.3],
     "subsample": [0.6, 1.0],
@@ -23,7 +23,7 @@
     "num_leaves": [10, 300]
   },
   "cat": {
-    "iterations": [100, 2000],
+    "iterations": [500, 10000],
     "depth": [3, 10],
     "learning_rate": [0.01, 0.3],
     "subsample": [0.6, 1.0],

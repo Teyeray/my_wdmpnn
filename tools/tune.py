@@ -352,8 +352,12 @@ def main():
         logger.info(f"Search space: {search_space}")
 
         # 创建Optuna study
+        storage_url = f"sqlite:///outputs/meta/{study_name}.db"
         study = optuna.create_study(
-            direction="minimize", study_name=study_name  # 最小化wMAE
+            direction="minimize",
+            study_name=study_name,
+            storage=storage_url,
+            load_if_exists=True,  # 避免重复创建
         )
 
         # 创建目标函数

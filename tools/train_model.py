@@ -4,6 +4,7 @@
 """
 import os
 import glob
+import json
 import shutil
 import argparse
 import warnings
@@ -22,46 +23,48 @@ def build_model(model_name: str, params: dict):
     """构建指定的模型"""
     if model_name == 'xgb':
         import xgboost as xgb
-        return xgb.XGBRegressor(**params)
+        return xgb.XGBRegressor(n_jobs=-1, **params)
     elif model_name == 'lgb':
         import lightgbm as lgb
-        return lgb.LGBMRegressor(**params, verbose=-1)
+        return lgb.LGBMRegressor(num_threads=-1, **params, verbose=-1)
     elif model_name == 'cat':
         import catboost as cat
         cat_params = params.copy()
         if 'verbose' not in cat_params:
             cat_params['verbose'] = False
+        cat_params['thread_count'] = -1
         return cat.CatBoostRegressor(**cat_params)
     else:
         raise ValueError(f"Unsupported model: {model_name}")
 
 
-def load_data(target: str, logger, train_path: str, test_path: str = None):
-    """加载训练和测试数据从指定的CSV文件路径"""
-    
+def load_data(target: str, logger, train_path: str, test_path: str = None,
+              feature_json_dir: str = "outputs/feature_sets/final"):
+    """加载训练和测试数据从指定的CSV文件路径 + 使用目标特定的特征列"""
+
     # 加载训练数据
     try:
         logger.info(f"Loading training data from: {train_path}")
         if not os.path.exists(train_path):
             raise FileNotFoundError(f"Training data file not found: {train_path}")
-        
+
         train_df = pd.read_csv(train_path)
         logger.info(f"Training data loaded: {train_df.shape}")
-        
+
         # 过滤出有目标值的样本
         original_size = len(train_df)
         train_df = train_df[train_df[target].notna()].copy()
         filtered_size = len(train_df)
-        
+
         if filtered_size == 0:
             raise ValueError(f"No valid samples found for target '{target}' in training data")
-        
+
         logger.info(f"Filtered training data: {original_size} -> {filtered_size} samples with valid '{target}' values")
-        
+
     except Exception as e:
         logger.error(f"Failed to load training data: {e}")
         raise
-    
+
     # 加载测试数据（可选）
     test_df = None
     if test_path and os.path.exists(test_path):
@@ -76,52 +79,48 @@ def load_data(target: str, logger, train_path: str, test_path: str = None):
         logger.warning(f"Test data file not found: {test_path}")
     else:
         logger.info("No test data path provided")
-        
-    
-    # 准备特征和标签
-    all_targets = ['Tg', 'Tc', 'Rg', 'FFV', 'Density']
-    
-    # 智能识别特征列（排除已知的非特征列）
-    exclude_cols = ['id', 'SMILES'] + all_targets
-    feature_cols = [col for col in train_df.columns if col not in exclude_cols]
-    
-    # 检查是否有有效特征
-    if not feature_cols:
-        raise ValueError(f"No feature columns found in training data. Available columns: {train_df.columns.tolist()}")
-    
+
+    # === 使用 {target}_columns.json 作为特征选择 ===
+    feature_json = os.path.join(feature_json_dir, f"{target}_columns.json")
+    if not os.path.exists(feature_json):
+        raise FileNotFoundError(f"Feature JSON not found: {feature_json}")
+
+    with open(feature_json, "r") as f:
+        feature_cols = json.load(f)
+
+    # 去掉 label/基础列，只保留真实特征
+    base_cols = ["SMILES", "id", "Tg", "FFV", "Tc", "Density", "Rg"]
+    feature_cols = [c for c in feature_cols if c not in base_cols]
+
+    # 过滤掉 train_df 里不存在的列
+    missing_in_train = [c for c in feature_cols if c not in train_df.columns]
+    if missing_in_train:
+        logger.warning(f"{target}: {len(missing_in_train)} features not in train, dropping {missing_in_train[:5]} ...")
+        feature_cols = [c for c in feature_cols if c in train_df.columns]
+
+    # 准备 X, y
     X = train_df[feature_cols].values
     y = train_df[target].values
-    train_ids = train_df['id'].values if 'id' in train_df.columns else np.arange(len(train_df))
-    
-    logger.info(f"Training data loaded:")
+    train_ids = train_df["id"].values if "id" in train_df.columns else np.arange(len(train_df))
+
+    logger.info(f"Training data ready:")
     logger.info(f"  - Shape: X={X.shape}, y={y.shape}")
     logger.info(f"  - Target '{target}': {np.sum(~np.isnan(y))} valid samples")
     logger.info(f"  - Features: {len(feature_cols)}")
-    logger.info(f"  - Feature types: {train_df[feature_cols].dtypes.value_counts().to_dict()}")
-    
+
     # 处理测试集
     X_test, test_ids = None, None
     if test_df is not None:
-        # 确保测试集有训练集的所有特征
-        missing_features = [col for col in feature_cols if col not in test_df.columns]
-        if missing_features:
-            logger.warning(f"Test data missing {len(missing_features)} features - filling with 0")
-            for col in missing_features:
-                test_df[col] = 0
-        
-        # 确保测试集特征顺序与训练集一致
-        try:
-            X_test = test_df[feature_cols].values
-            test_ids = test_df['id'].values if 'id' in test_df.columns else np.arange(len(test_df))
-            logger.info(f"Test data loaded: {X_test.shape}")
-        except KeyError as e:
-            logger.error(f"Failed to extract test features: {e}")
-            logger.info(f"Available test columns: {test_df.columns.tolist()}")
-            X_test, test_ids = None, None
+        for c in feature_cols:
+            if c not in test_df.columns:
+                test_df[c] = 0
+        X_test = test_df[feature_cols].values
+        test_ids = test_df["id"].values if "id" in test_df.columns else np.arange(len(test_df))
+        logger.info(f"Test data loaded: {X_test.shape}")
     else:
         logger.info("No test data available")
-    
-    return X, y, X_test, test_ids, train_ids
+
+    return X, y, X_test, test_ids, train_ids, feature_cols
 
 
 def save_models_if_improved(fold_models: list, model_name: str, target: str, 
@@ -216,24 +215,31 @@ def save_models_if_improved(fold_models: list, model_name: str, target: str,
             logger.info(f"Current best model directory: {old_model_dir}")
         return False, old_model_dir
 
-def save_feature_importance(model, model_name: str, target: str, fold: int, logger):
+def save_feature_importance(model, model_name: str, target: str, fold: int, feature_cols, logger):
     """保存特征重要性"""
     try:
         if model_name == 'xgb':
-            imp = model.get_booster().get_score(importance_type="gain")
-            df_imp = pd.DataFrame(list(imp.items()), columns=["feature", "importance"])
+            # 用 sklearn API 的属性，长度和 feature_cols 对齐
+            imp = model.feature_importances_
+            df_imp = pd.DataFrame({
+                "feature": feature_cols,
+                "importance": imp
+            })
+
         elif model_name == 'lgb':
             imp = model.booster_.feature_importance(importance_type="gain")
             df_imp = pd.DataFrame({
                 "feature": model.booster_.feature_name(),
                 "importance": imp
             })
+
         elif model_name == 'cat':
             imp = model.get_feature_importance()
             df_imp = pd.DataFrame({
-                "feature": model.feature_names_,
+                "feature": feature_cols,
                 "importance": imp
             })
+
         else:
             logger.warning(f"Feature importance not supported for {model_name}")
             return
@@ -242,7 +248,7 @@ def save_feature_importance(model, model_name: str, target: str, fold: int, logg
         ensure_dir(os.path.dirname(imp_path))
         df_imp.to_csv(imp_path, index=False)
         logger.info(f"Feature importance saved: {imp_path}")
-        
+
     except Exception as e:
         logger.warning(f"Failed to save feature importance: {e}")
 
@@ -289,7 +295,7 @@ def run_cv(model_name: str, target: str, config: dict, n_folds: int, seed: int, 
         logger.info("No previous best model found")
     
     # 加载数据
-    X, y, X_test, test_ids, train_ids = load_data(target, logger, train_path, test_path)
+    X, y, X_test, test_ids, train_ids, feature_cols = load_data(target, logger, train_path, test_path)
     
     # 准备配置
     params = config.get('params', {})
@@ -331,12 +337,17 @@ def run_cv(model_name: str, target: str, config: dict, n_folds: int, seed: int, 
                 callbacks=[
                     lgb.early_stopping(fit_params.get('early_stopping_rounds', 100)),
                     lgb.log_evaluation(0)
-                ]
+                ],
+                feature_name=feature_cols
             )
         elif model_name == 'cat':
+            from catboost import Pool
+            train_pool = Pool(X_train, y_train, feature_names=feature_cols)
+            val_pool = Pool(X_val, y_val, feature_names=feature_cols)
+
             model.fit(
-                X_train, y_train,
-                eval_set=[(X_val, y_val)],
+                train_pool,
+                eval_set=val_pool,
                 early_stopping_rounds=fit_params.get('early_stopping_rounds', 100),
                 verbose=False
             )
@@ -361,7 +372,7 @@ def run_cv(model_name: str, target: str, config: dict, n_folds: int, seed: int, 
             test_predictions.append(test_pred)
         
         # 保存特征重要性
-        save_feature_importance(model, model_name, target, fold, logger)
+        save_feature_importance(model, model_name, target, fold, feature_cols, logger)
     
 
     # 计算CV指标

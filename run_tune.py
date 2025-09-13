@@ -4,10 +4,10 @@ import subprocess
 PROPERTIES = ["Tg", "FFV", "Tc", "Density", "Rg"]
 MODELS = ["xgb", "lgb", "cat"]
 
-train_path = "datasets/train_orig_testing1.csv"
-test_path = "datasets/test-orig-testing1.csv"   # 注意这里原命令里是 test-orig-testing1
+train_path = "datasets/train_orig_vanda2.csv"
+test_path = "datasets/test_orig_vanda2.csv"   
 search_space = "configs/search_space.json"
-n_trials = 50
+n_trials = 150
 
 for model in MODELS:
     base_config = f"configs/{model}_base.json"

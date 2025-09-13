@@ -5,15 +5,15 @@ import subprocess
 PROPERTIES = ["Tg", "FFV", "Tc", "Density", "Rg"]
 MODELS = ["xgb", "lgb", "cat"]
 
-train_path = "datasets/train_orig_testing1.csv"
-test_path = "datasets/test-orig-testing1.csv"
+train_path = "datasets/train_orig_vanda2.csv"
+test_path = "datasets/test-orig_vanda2.csv"
 search_space = "configs/search_space.json"
-n_trials = 150
+n_trials = 100
 
 pbs_template = """#!/bin/bash
 #PBS -N {job_name}
 #PBS -P personal-e1350261
-#PBS -l select=1:ncpus=8:mem=32gb
+#PBS -l select=1:ncpus=32:mem=64gb
 #PBS -l walltime=12:00:00
 #PBS -j oe
 #PBS -o logs/{job_name}.out
@@ -22,7 +22,7 @@ set -euo pipefail
 cd $PBS_O_WORKDIR
 
 
-source /scratch/e1350261/venvs/ai39/bin/activate
+source /scratch/e1350261/venvs/kaggle39/bin/activate
 
 
 which python
@@ -35,7 +35,7 @@ python --version
 for model in MODELS:
     base_config = f"configs/{model}_base.json"
     for target in PROPERTIES:
-        study_name = f"{model}_{target}_finetune_vanda"
+        study_name = f"{model}_{target}_finetune_vanda_2"
 
         cmd = (
             f"python -m tools.tune "
@@ -49,12 +49,12 @@ for model in MODELS:
             f"--study-name {study_name}"
         )
 
-        job_name = f"{model}_{target}_finetune"
+        job_name = f"{model}_{target}_2finetune"
         script_name = f"{job_name}.pbs"
 
         # 写 PBS 脚本
         os.makedirs("logs", exist_ok=True)
-        with open(script_name, "w") as f:
+        with open(f'script/{script_name}', "w") as f:
             f.write(pbs_template.format(job_name=job_name, cmd=cmd))
 
         # 提交作业
